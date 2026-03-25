@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRC 2026 Path Planner</title>
+<style>
+:root{--bg:#0f1117;--surface:#181b24;--surface2:#1f2333;--border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.15);--text:#e8eaf0;--text-muted:#8890a4;--blue:#4a9eff;--red:#ff5a5a;--green:#3ee684;--amber:#f7b731;--teal:#26d0ce;--purple:#a78bfa;--panel:#14171f}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono','Fira Code',monospace;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.logo{font-size:13px;font-weight:600;color:var(--blue);letter-spacing:.04em;white-space:nowrap}
+.logo span{color:var(--text-muted)}
+.header-btns{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+.btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:inherit;font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--surface);border-color:var(--blue)}
+.btn.primary{background:var(--blue);color:#000;border-color:var(--blue);font-weight:600}
+.btn.primary:hover{background:#6ab3ff}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.danger:hover{background:rgba(255,90,90,.1)}
+.btn.active-btn{background:rgba(74,158,255,.18);border-color:var(--blue);color:var(--blue)}
+.btn.active-btn-r{background:rgba(167,139,250,.18);border-color:var(--purple);color:var(--purple)}
+.btn.active-btn-del{background:rgba(255,90,90,.18);border-color:var(--red);color:var(--red)}
+.btn.active-btn-drag{background:rgba(247,183,49,.18);border-color:var(--amber);color:var(--amber)}
+.alliance-toggle{display:flex;border:1px solid var(--border2);border-radius:5px;overflow:hidden}
+.alliance-toggle button{background:transparent;border:none;color:var(--text-muted);font-family:inherit;font-size:11px;padding:4px 11px;cursor:pointer;transition:all .15s}
+.alliance-toggle button.active.blue{background:rgba(74,158,255,.2);color:var(--blue)}
+.alliance-toggle button.active.red{background:rgba(255,90,90,.2);color:var(--red)}
+.main{display:flex;flex:1;overflow:hidden;min-height:0}
+.field-col{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.field-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;min-height:0}
+#field-canvas{border:1px solid var(--border2);border-radius:3px;cursor:crosshair;display:block;max-width:100%;max-height:100%}
+.sim-bar{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--panel);border-top:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.sim-controls{display:flex;gap:4px}
+.sim-btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:inherit;font-size:13px;padding:3px 9px;border-radius:5px;cursor:pointer;transition:all .15s;line-height:1.4}
+.sim-btn:hover{border-color:var(--blue)}
+.sim-btn.playing{background:rgba(62,230,132,.15);border-color:var(--green);color:var(--green)}
+#sim-scrubber{flex:1;min-width:80px;accent-color:var(--blue)}
+.sim-time{font-size:10px;color:var(--text-muted);white-space:nowrap}
+.sim-speed select{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:10px;padding:2px 4px;border-radius:3px}
+.sim-speed{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted)}
+.sim-info{font-size:10px;color:var(--text-muted);margin-left:6px;white-space:nowrap}
+.sim-info span{color:var(--text)}
+.coord-bar{display:flex;gap:14px;align-items:center;padding:4px 14px;background:var(--panel);border-top:1px solid var(--border);font-size:10px;color:var(--text-muted);flex-shrink:0}
+.coord-bar span{color:var(--text)}
+.sidebar{width:290px;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-tabs{display:flex;border-bottom:1px solid var(--border)}
+.sidebar-tabs button{flex:1;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:11px;padding:8px 2px;cursor:pointer;transition:all .15s}
+.sidebar-tabs button.active{color:var(--blue);border-bottom-color:var(--blue)}
+.sidebar-content{flex:1;overflow-y:auto;padding:11px}
+.wp-item{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 10px;margin-bottom:7px;cursor:pointer;transition:border-color .15s;position:relative}
+.wp-item:hover{border-color:var(--border2)}
+.wp-item.selected{border-color:var(--blue)}
+.wp-item.start{border-left:3px solid var(--green)}
+.wp-item.end{border-left:3px solid var(--red)}
+.wp-item.mid{border-left:3px solid var(--amber)}
+.wp-label{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px}
+.wp-coords{font-size:11px;color:var(--text);line-height:1.5;margin-bottom:5px}
+.wp-coords span{color:var(--text-muted)}
+.wp-del{position:absolute;top:6px;right:6px;background:none;border:none;color:var(--text-muted);font-size:14px;cursor:pointer;line-height:1;padding:2px 5px;border-radius:3px}
+.wp-del:hover{color:var(--red);background:rgba(255,90,90,.1)}
+.heading-row{display:flex;align-items:center;gap:8px}
+.dial-canvas{border-radius:50%;cursor:grab;display:block;flex-shrink:0}
+.dial-canvas:active{cursor:grabbing}
+.heading-inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:11px;padding:3px 5px;border-radius:4px;width:58px;text-align:center}
+.heading-inp:focus{border-color:var(--purple);outline:none}
+.section-hdr{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin:10px 0 6px;display:flex;align-items:center;gap:5px}
+.section-hdr::after{content:'';flex:1;height:1px;background:var(--border)}
+.form-row{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.form-row label{font-size:11px;color:var(--text-muted);min-width:68px}
+.form-row input,.form-row select{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:11px;padding:4px 6px;border-radius:4px;outline:none;transition:border-color .15s}
+.form-row input:focus,.form-row select:focus{border-color:var(--blue)}
+.code-block{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px;font-size:10px;font-family:'JetBrains Mono',monospace;line-height:1.7;color:var(--green);white-space:pre-wrap;word-break:break-all;max-height:240px;overflow-y:auto}
+#tooltip{position:fixed;pointer-events:none;background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:4px 8px;font-size:10px;color:var(--text);z-index:100;display:none}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.mode-pill{font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid;font-weight:500;white-space:nowrap}
+.mode-pill.add{background:rgba(74,158,255,.1);color:var(--blue);border-color:var(--blue)}
+.mode-pill.drag{background:rgba(247,183,49,.1);color:var(--amber);border-color:var(--amber)}
+.mode-pill.rotate{background:rgba(167,139,250,.1);color:var(--purple);border-color:var(--purple)}
+.mode-pill.delete{background:rgba(255,90,90,.1);color:var(--red);border-color:var(--red)}
+.info-box{background:rgba(74,158,255,.06);border:1px solid rgba(74,158,255,.2);border-radius:5px;padding:6px 8px;font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:8px}
+.info-box strong{color:var(--text)}
+.collision-warn{background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.3);border-radius:5px;padding:5px 8px;font-size:10px;color:var(--red);margin-bottom:6px;display:none}
+.empty-note{color:var(--text-muted);font-size:11px;padding:5px 0}
+.output-subsection{margin-top:10px}
+.dial-wrap{flex-shrink:0;width:36px;height:36px}
+.heading-meta{font-size:10px;color:var(--purple);margin-left:4px;text-align:right}
+.heading-meta-dir{color:var(--text-muted);font-size:9px;margin-top:2px}
+.hidden{display:none}
+.collision-badge{display:none;color:var(--red)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">FRC <span>2026 //</span> REBUILT Path Planner</div>
+  <div class="alliance-toggle">
+    <button id="btn-blue" class="active blue" data-alliance="blue">BLUE</button>
+    <button id="btn-red" data-alliance="red">RED</button>
+  </div>
+  <div id="mode-indicator" class="mode-pill add">+ ADD WAYPOINT</div>
+  <div class="header-btns">
+    <button class="btn active-btn" id="modeBtn-add" data-mode="add">Add (A)</button>
+    <button class="btn" id="modeBtn-drag" data-mode="drag">Drag (D)</button>
+    <button class="btn" id="modeBtn-rotate" data-mode="rotate">Rotate (R)</button>
+    <button class="btn danger" id="modeBtn-delete" data-mode="delete">Del (X)</button>
+    <button class="btn" id="btn-clear">Clear</button>
+    <button class="btn primary" id="btn-copy">Copy Array</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="field-col">
+    <div class="field-wrap" id="field-wrap">
+      <canvas id="field-canvas"></canvas>
+    </div>
+
+    <div class="sim-bar">
+      <div class="sim-controls">
+        <button class="sim-btn" id="sim-rewind" title="Rewind (Home)">⏮</button>
+        <button class="sim-btn" id="sim-play" title="Play/Pause (Space)">▶</button>
+        <button class="sim-btn" id="sim-step" title="Step +0.1s">⏭</button>
+      </div>
+      <input type="range" id="sim-scrubber" min="0" max="1000" value="0" step="1" title="Simulation timeline scrubber">
+      <div class="sim-time">t = <span id="sim-t">0.00</span>s / <span id="sim-total">0.00</span>s</div>
+      <div class="sim-speed">
+        ×<select id="sim-speed-sel" title="Simulation speed multiplier">
+          <option value="0.25">0.25</option><option value="0.5">0.5</option>
+          <option value="1" selected>1</option><option value="2">2</option>
+        </select>
+      </div>
+      <div class="sim-info">
+        <span id="sim-robot-info">place waypoints to simulate</span>
+      </div>
+    </div>
+
+    <div class="coord-bar">
+      <div>X=<span id="cur-x">0.0</span>" Y=<span id="cur-y">0.0</span>"</div>
+      <div>WPs: <span id="wp-count">0</span></div>
+      <div>Dist: <span id="path-len">0.0</span>"</div>
+      <div id="collision-badge" class="collision-badge">⚠ Collision</div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <button class="active" data-tab="waypoints">Waypoints</button>
+      <button data-tab="output">Java</button>
+      <button data-tab="settings">Settings</button>
+    </div>
+
+    <div class="sidebar-content" id="tab-waypoints">
+      <div class="info-box">
+        <strong>Origin:</strong> Blue outpost corner (top-right) — (0,0)<br>
+        <strong>+X</strong> right &nbsp; <strong>+Y</strong> forward<br>
+        <strong>θ</strong> heading — 0° points to RED HUB, clockwise positive
+      </div>
+      <div class="collision-warn" id="collision-warn">⚠ Path passes through a blocked obstacle!</div>
+      <div class="section-hdr">Waypoints</div>
+      <div id="wp-list"><div class="empty-note">Click the field to place waypoints.</div></div>
+    </div>
+
+    <div class="sidebar-content hidden" id="tab-output">
+      <div class="section-hdr">Java Array</div>
+      <pre class="code-block" id="java-output">// No waypoints yet</pre>
+      <div class="section-hdr output-subsection">Raw Poses</div>
+      <pre class="code-block" id="raw-output">// No waypoints yet</pre>
+    </div>
+
+    <div class="sidebar-content hidden" id="tab-settings">
+      <div class="section-hdr">Robot</div>
+      <div class="form-row"><label>Width (in)</label><input type="number" id="robot-w" value="28" min="10" max="36"></div>
+      <div class="form-row"><label>Length (in)</label><input type="number" id="robot-l" value="28" min="10" max="36"></div>
+      <div class="section-hdr">Simulation</div>
+      <div class="form-row"><label>Max vel (in/s)</label><input type="number" id="sim-vel" value="150" min="20" max="400"></div>
+      <div class="section-hdr">Display</div>
+      <div class="form-row"><label>Show grid</label><input type="checkbox" id="show-grid" checked></div>
+      <div class="form-row"><label>Ghost trail</label><input type="checkbox" id="show-ghost" checked></div>
+      <div class="form-row"><label>Snap (in)</label><input type="number" id="snap-val" value="0" min="0" max="24" step="6"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ── FIELD CONSTANTS ──────────────────────────────────────────────────────────
+const FW = 651.2, FH = 317.7;
+
+const OBSTACLES = [
+  { id:'hub_blue',  cx:FW-158.6,    cy:FH/2,     w:47,    h:130,  label:'Blue HUB',   color:'#4a9eff', blocked:true  },
+  { id:'hub_red',   cx:158.6,       cy:FH/2,     w:47,    h:130,  label:'Red HUB',    color:'#ff5a5a', blocked:true  },
+  { id:'bump_bl',   cx:FW-158.6,    cy:FH/2-87,  w:73,    h:44.4, label:'BUMP',       color:'#4a6eff', blocked:true  },
+  { id:'bump_br',   cx:FW-158.6,    cy:FH/2+87,  w:73,    h:44.4, label:'BUMP',       color:'#4a6eff', blocked:true  },
+  { id:'bump_rl',   cx:158.6,       cy:FH/2-87,  w:73,    h:44.4, label:'BUMP',       color:'#ff6a3a', blocked:true  },
+  { id:'bump_rr',   cx:158.6,       cy:FH/2+87,  w:73,    h:44.4, label:'BUMP',       color:'#ff6a3a', blocked:true  },
+  { id:'trench_bl', cx:FW-158.6,    cy:23.5,     w:65.65, h:47,   label:'TRENCH',     color:'#445566', blocked:false },
+  { id:'trench_br', cx:FW-158.6,    cy:FH-23.5,  w:65.65, h:47,   label:'TRENCH',     color:'#445566', blocked:false },
+  { id:'trench_rl', cx:158.6,       cy:23.5,     w:65.65, h:47,   label:'TRENCH',     color:'#445566', blocked:false },
+  { id:'trench_rr', cx:158.6,       cy:FH-23.5,  w:65.65, h:47,   label:'TRENCH',     color:'#445566', blocked:false },
+  { id:'depot_b',   cx:FW-38,       cy:FH-38,     w:55,    h:27,   label:'Blue DEPOT', color:'rgba(74,158,255,.45)', blocked:false },
+  { id:'depot_r',   cx:38,          cy:38,        w:55,    h:27,   label:'Red DEPOT',  color:'rgba(255,90,90,.45)',  blocked:false },
+  { id:'fuel',      cx:FW/2,     cy:FH/2,     w:206,   h:72,   label:'FUEL',       color:'rgba(247,183,49,.14)', blocked:false },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+// Waypoint: { x, y, heading } — user coords (inches, origin = blue outpost corner)
+let waypoints = [];
+let selectedWP = -1;
+let mode = 'add';
+let alliance = 'blue';
+let draggingWP = -1;
+let rotatingWP = -1;
+
+let simT = 0;
+let simPlaying = false;
+let simRAF = null;
+let simLastTS = null;
+let simSpeed = 1.0;
+let simCache = null; // { samples, totalTime, totalDist }
+
+const canvas = document.getElementById('field-canvas');
+const ctx = canvas.getContext('2d');
+
+const dom = {
+  fieldWrap: document.getElementById('field-wrap'),
+  snapVal: document.getElementById('snap-val'),
+  simVel: document.getElementById('sim-vel'),
+  showGrid: document.getElementById('show-grid'),
+  showGhost: document.getElementById('show-ghost'),
+  robotW: document.getElementById('robot-w'),
+  robotL: document.getElementById('robot-l'),
+  simPlay: document.getElementById('sim-play'),
+  simScrubber: document.getElementById('sim-scrubber'),
+  simT: document.getElementById('sim-t'),
+  simTotal: document.getElementById('sim-total'),
+  pathLen: document.getElementById('path-len'),
+  wpCount: document.getElementById('wp-count'),
+  collisionWarn: document.getElementById('collision-warn'),
+  collisionBadge: document.getElementById('collision-badge'),
+  simRobotInfo: document.getElementById('sim-robot-info'),
+  curX: document.getElementById('cur-x'),
+  curY: document.getElementById('cur-y'),
+  tooltip: document.getElementById('tooltip'),
+  modeIndicator: document.getElementById('mode-indicator'),
+  btnBlue: document.getElementById('btn-blue'),
+  btnRed: document.getElementById('btn-red'),
+  wpList: document.getElementById('wp-list'),
+  javaOutput: document.getElementById('java-output'),
+  rawOutput: document.getElementById('raw-output'),
+  btnCopy: document.getElementById('btn-copy'),
+};
+
+const EMPTY_WAYPOINTS_HTML = '<div class="empty-note">Click the field to place waypoints.</div>';
+
+let scale = 1, canvasW, canvasH;
+
+// ── COORD TRANSFORMS ─────────────────────────────────────────────────────────
+// Image coords: (0,0)=top-left, X→right, Y↓
+// User coords: origin = image top-right (blue outpost corner)
+//   userX = imgY (down in image = +X user)
+//   userY = FW - imgX (left in image = +Y user)
+function imgToUser(ix, iy) { return { x: iy, y: FW - ix }; }
+function userToImg(ux, uy) { return { imgX: FW - uy, imgY: ux }; }
+function canvasToUser(px, py) {
+  let { x, y } = imgToUser(px / scale, py / scale);
+  const snap = parseFloat(dom.snapVal.value);
+  if (snap > 0) { x = Math.round(x/snap)*snap; y = Math.round(y/snap)*snap; }
+  return { x, y };
+}
+function userToCanvas(ux, uy) {
+  const { imgX, imgY } = userToImg(ux, uy);
+  return { cx: imgX * scale, cy: imgY * scale };
+}
+
+function getGlobalZeroAngle(){
+  const hub = OBSTACLES.find(o=>o.id==='hub_red');
+  const hubCx = hub.cx * scale, hubCy = hub.cy * scale;
+  return Math.atan2(hubCy - (canvasH/2), hubCx - (canvasW/2));
+}
+
+// ── RESIZE ────────────────────────────────────────────────────────────────────
+function resize() {
+  const maxW = dom.fieldWrap.clientWidth - 16;
+  const maxH = dom.fieldWrap.clientHeight - 8;
+  scale = Math.min(maxW / FW, maxH / FH);
+  canvasW = Math.round(FW * scale);
+  canvasH = Math.round(FH * scale);
+  canvas.width = canvasW; canvas.height = canvasH;
+  canvas.style.width = canvasW + 'px'; canvas.style.height = canvasH + 'px';
+  redraw();
+}
+
+// ── CATMULL-ROM SPLINE ───────────────────────────────────────────────────────
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2=t*t, t3=t2*t;
+  return {
+    x: .5*((2*p1.x)+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
+    y: .5*((2*p1.y)+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3)
+  };
+}
+
+function buildSimPath() {
+  if (waypoints.length < 2) return null;
+  const pts = waypoints;
+  const STEPS = 80;
+  const samples = [];
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1,i+2)];
+    for (let s = 0; s < STEPS; s++) {
+      const t = s / STEPS;
+      const pos = catmullRom(p0, p1, p2, p3, t);
+      // Slerp heading
+      let h0 = normAngle(p1.heading), h1 = normAngle(p2.heading);
+      let dh = h1 - h0;
+      if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+      samples.push({ ...pos, heading: h0 + dh * t });
+    }
+  }
+  const last = pts[pts.length-1];
+  samples.push({ x: last.x, y: last.y, heading: last.heading });
+
+  // Assign time by distance / maxVel
+  const maxVel = parseFloat(dom.simVel.value) || 150;
+  let totalDist = 0;
+  const dists = [0];
+  for (let i = 1; i < samples.length; i++) {
+    totalDist += Math.hypot(samples[i].x-samples[i-1].x, samples[i].y-samples[i-1].y);
+    dists.push(totalDist);
+  }
+  const totalTime = totalDist / maxVel;
+  for (let i = 0; i < samples.length; i++) samples[i].t = totalDist > 0 ? dists[i]/totalDist * totalTime : 0;
+
+  return { samples, totalTime: Math.max(totalTime, 0.01), totalDist };
+}
+
+function normAngle(a) { while(a>180)a-=360; while(a<-180)a+=360; return a; }
+
+function sampleAtTime(t) {
+  if (!simCache || !simCache.samples.length) return null;
+  const s = simCache.samples;
+  if (t <= s[0].t) return s[0];
+  if (t >= s[s.length-1].t) return s[s.length-1];
+  let lo=0, hi=s.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1; if(s[m].t<=t)lo=m;else hi=m;}
+  const a=s[lo], b=s[hi], f=b.t>a.t?(t-a.t)/(b.t-a.t):0;
+  let dh=b.heading-a.heading;
+  if(dh>180)dh-=360; if(dh<-180)dh+=360;
+  return { x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f, heading:a.heading+dh*f, t };
+}
+
+// ── DRAW ──────────────────────────────────────────────────────────────────────
+function redraw() {
+  simCache = buildSimPath();
+  ctx.clearRect(0,0,canvasW,canvasH);
+
+  // Background
+  ctx.fillStyle='#0d1018'; ctx.fillRect(0,0,canvasW,canvasH);
+  if(dom.showGrid.checked) drawGrid();
+
+  // Field border
+  ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=2;
+  ctx.strokeRect(1,1,canvasW-2,canvasH-2);
+
+  // Alliance zone tints
+  const ad=158.6*scale;
+  ctx.fillStyle='rgba(74,158,255,.04)'; ctx.fillRect(canvasW-ad,0,ad,canvasH);
+  ctx.fillStyle='rgba(255,90,90,.04)'; ctx.fillRect(0,0,ad,canvasH);
+
+  // Center line
+  // Neutral zone (vertical band centered on field)
+  const nzWidth = 30 * scale; // ~30 inches neutral zone width
+  ctx.fillStyle = 'rgba(255,255,255,.04)';
+  ctx.fillRect(canvasW/2 - nzWidth/2, 0, nzWidth, canvasH);
+  ctx.setLineDash([8,8]); ctx.strokeStyle='rgba(255,255,255,.08)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(canvasW/2 - nzWidth/2, 0); ctx.lineTo(canvasW/2 - nzWidth/2, canvasH);
+  ctx.moveTo(canvasW/2 + nzWidth/2, 0); ctx.lineTo(canvasW/2 + nzWidth/2, canvasH);
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Robot starting line
+  const sl=alliance==='blue'?(canvasW-ad):ad;
+  ctx.strokeStyle=alliance==='blue'?'rgba(74,158,255,.45)':'rgba(255,90,90,.45)';
+  ctx.lineWidth=1.5; ctx.setLineDash([5,5]);
+  ctx.beginPath(); ctx.moveTo(sl,0); ctx.lineTo(sl,canvasH); ctx.stroke();
+  ctx.setLineDash([]);
+
+  drawObstacles();
+
+  // Alliance labels
+  ctx.font=`500 ${Math.max(9,scale*7.5)}px 'JetBrains Mono',monospace`;
+  ctx.textAlign='center';
+  ctx.fillStyle='rgba(74,158,255,.35)'; ctx.fillText('BLUE',canvasW-ad/2,canvasH/2);
+  ctx.fillStyle='rgba(255,90,90,.35)'; ctx.fillText('RED',ad/2,canvasH/2);
+
+  // Field labels: scoring table (top) and audience side (bottom)
+  ctx.fillStyle='rgba(255,255,255,.18)'; ctx.font=`600 ${Math.max(10,scale*8)}px 'JetBrains Mono',monospace`;
+  ctx.textAlign='center'; ctx.fillText('SCORING TABLE', canvasW/2, Math.max(18, scale*12));
+  ctx.fillText('AUDIENCE SIDE', canvasW/2, canvasH - Math.max(6, scale*6));
+
+  // Path
+  let hasCollision=false;
+  if(waypoints.length>=2) hasCollision=drawPath();
+
+  // Ghost trail
+  if(dom.showGhost.checked && simCache && simT>0.05) drawGhostTrail();
+
+  // Simulated robot
+  if(simCache && simT>0){
+    const pose=sampleAtTime(simT);
+    if(pose) drawRobotAt(pose.x,pose.y,pose.heading,true,1);
+  }
+
+  // Waypoint markers
+  for(let i=0;i<waypoints.length;i++) drawWaypoint(i);
+
+  // Collision UI
+  dom.collisionWarn.style.display = hasCollision?'block':'none';
+  dom.collisionBadge.style.display = hasCollision?'flex':'none';
+
+  // Time display
+  if(simCache) {
+    dom.simTotal.textContent=simCache.totalTime.toFixed(2);
+    dom.pathLen.textContent=simCache.totalDist.toFixed(1);
+  }
+  dom.simT.textContent=simT.toFixed(2);
+  dom.wpCount.textContent=waypoints.length;
+}
+
+function drawGrid() {
+  const g=24*scale;
+  ctx.strokeStyle='rgba(255,255,255,.035)'; ctx.lineWidth=.5;
+  for(let x=0;x<canvasW;x+=g){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvasH);ctx.stroke()}
+  for(let y=0;y<canvasH;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvasW,y);ctx.stroke()}
+  ctx.strokeStyle='rgba(255,255,255,.06)';
+  for(let x=0;x<canvasW;x+=g*4){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvasH);ctx.stroke()}
+  for(let y=0;y<canvasH;y+=g*4){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvasW,y);ctx.stroke()}
+}
+
+function drawObstacles() {
+  for(const obs of OBSTACLES) {
+    const cx=obs.cx*scale, cy=obs.cy*scale, w=obs.w*scale, h=obs.h*scale;
+    if(obs.id.startsWith('hub')) {
+      ctx.fillStyle=obs.color+'18'; ctx.strokeStyle=obs.color; ctx.lineWidth=1.5;
+      ctx.beginPath(); rrect(cx-w/2,cy-h/2,w,h,4); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle=obs.color+'88'; ctx.lineWidth=1; drawHex(cx,cy,w*.37);
+      ctx.fillStyle=obs.color; ctx.font=`500 ${Math.max(7,scale*6)}px 'JetBrains Mono',monospace`;
+      ctx.textAlign='center'; ctx.fillText(obs.label,cx,cy-h/2-3);
+    } else if(obs.id.startsWith('bump')) {
+      ctx.fillStyle=obs.color+'25'; ctx.strokeStyle=obs.color+'55'; ctx.lineWidth=1;
+      ctx.beginPath(); rrect(cx-w/2,cy-h/2,w,h,3); ctx.fill(); ctx.stroke();
+    } else if(obs.id.startsWith('trench')) {
+      ctx.fillStyle='#33446677'; ctx.strokeStyle='#446688'; ctx.lineWidth=1;
+      ctx.setLineDash([4,4]); ctx.beginPath(); rrect(cx-w/2,cy-h/2,w,h,2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+    } else if(obs.id.startsWith('depot')) {
+      ctx.fillStyle=obs.color; ctx.strokeStyle=obs.id.includes('b')?'#4a9eff':'#ff5a5a'; ctx.lineWidth=1.5;
+      ctx.beginPath(); rrect(cx-w/2,cy-h/2,w,h,3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=obs.id.includes('b')?'#4a9eff':'#ff5a5a';
+      ctx.font=`500 ${Math.max(7,scale*5.5)}px 'JetBrains Mono',monospace`;
+      ctx.textAlign='center'; ctx.fillText(obs.label,cx,cy+3);
+    } else if(obs.id==='fuel') {
+      ctx.fillStyle=obs.color; ctx.strokeStyle='rgba(247,183,49,.3)'; ctx.lineWidth=1;
+      ctx.setLineDash([3,5]); ctx.beginPath(); rrect(cx-w/2,cy-h/2,w,h,3); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+      // Arrange fuel balls vertically: 12 columns × 20 rows with center gap
+      const cols = 12; const rows = 20;
+      const ballR = Math.max(1.5, scale * 0.9);
+      const padX = 10; const padY = 8;
+      const xStart = cx - w/2 + padX;
+      const yStart = cy - h/2 + padY;
+      const xSpacing = (w - padX*2) / Math.max(1, cols - 1);
+      const ySpacing = (h - padY*2) / Math.max(1, rows - 1);
+      const skipCol = Math.floor(cols/2); // center column gap
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (c === skipCol) continue; // skip center column
+          const fx = xStart + c * xSpacing;
+          const fy = yStart + r * ySpacing;
+          ctx.fillStyle = 'rgba(247,183,49,.5)'; ctx.beginPath(); ctx.arc(fx, fy, ballR, 0, Math.PI*2); ctx.fill();
+        }
+      }
+    }
+  }
+}
+
+function drawPath() {
+  if(!simCache || !simCache.samples.length) return false;
+  const samps=simCache.samples;
+  let hasCollision=false;
+  for(let i=0;i<waypoints.length-1;i++) if(checkSegBlocked(waypoints[i],waypoints[i+1])){hasCollision=true;break}
+
+  ctx.beginPath();
+  const f=userToCanvas(samps[0].x,samps[0].y);
+  ctx.moveTo(f.cx,f.cy);
+  for(let i=1;i<samps.length;i++){const p=userToCanvas(samps[i].x,samps[i].y);ctx.lineTo(p.cx,p.cy)}
+  ctx.strokeStyle=hasCollision?'rgba(255,80,80,.75)':'rgba(62,230,132,.55)';
+  ctx.lineWidth=2.5; ctx.setLineDash(hasCollision?[7,4]:[]); ctx.stroke(); ctx.setLineDash([]);
+
+  // Direction arrows
+  ctx.fillStyle=hasCollision?'rgba(255,80,80,.55)':'rgba(62,230,132,.5)';
+  const step=Math.max(20,Math.floor(samps.length/12));
+  for(let i=step;i<samps.length-step/2;i+=step){
+    const p=userToCanvas(samps[i].x,samps[i].y), q=userToCanvas(samps[Math.min(i+5,samps.length-1)].x,samps[Math.min(i+5,samps.length-1)].y);
+    drawArrow(p.cx,p.cy,Math.atan2(q.cy-p.cy,q.cx-p.cx),7);
+  }
+  return hasCollision;
+}
+
+function drawGhostTrail() {
+  const samps=simCache.samples;
+  for(let g=6;g>=1;g--){
+    const pose=sampleAtTime(simT*(g/6));
+    if(pose) drawRobotAt(pose.x,pose.y,pose.heading,false,g/6*0.16);
+  }
+}
+
+function drawRobotAt(ux,uy,headingDeg,active,alpha) {
+  const {cx,cy}=userToCanvas(ux,uy);
+  const rw=parseFloat(dom.robotW.value)*scale;
+  const rl=parseFloat(dom.robotL.value)*scale;
+  const globalZero = getGlobalZeroAngle();
+  const hRad = headingDeg * Math.PI/180;
+  // Heading is clockwise-positive; canvas math is CCW-positive, so subtract.
+  // Apply a small front-offset so the robot graphic's forward direction
+  // matches the numeric heading (fixes a 90° visual rotation).
+  const FRONT_OFFSET = Math.PI/2; // rotate graphic +90° (CCW) to align
+  const angle = globalZero - hRad + FRONT_OFFSET;
+  const alc=alliance==='blue'?'74,158,255':'255,90,90';
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle);
+  ctx.fillStyle=active?`rgba(${alc},${.28*alpha})`:`rgba(${alc},${alpha})`;
+  ctx.strokeStyle=active?`rgba(${alc},${.9*alpha})`:`rgba(${alc},${alpha*.7})`;
+  ctx.lineWidth=active?1.5:1;
+  ctx.beginPath(); rrect(-rw/2,-rl/2,rw,rl,3); ctx.fill(); ctx.stroke();
+  if(active){
+    // Front bar
+    ctx.fillStyle=`rgba(${alc},0.85)`;
+    ctx.fillRect(-rw*.28,-rl/2,rw*.56,Math.max(3,scale*1.8));
+    // Center dot
+    ctx.fillStyle='rgba(255,255,255,.65)';
+    ctx.beginPath(); ctx.arc(0,0,Math.max(2,scale*1.4),0,Math.PI*2); ctx.fill();
+    // Heading arrow
+    ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-rl*.42); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ctx.beginPath(); ctx.moveTo(0,-rl*.42-5); ctx.lineTo(-4,-rl*.42+2); ctx.lineTo(4,-rl*.42+2); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawWaypoint(i) {
+  const wp=waypoints[i];
+  const {cx,cy}=userToCanvas(wp.x,wp.y);
+  const isFirst=i===0, isLast=i===waypoints.length-1, isSel=i===selectedWP;
+  const r=Math.max(7,scale*4.2);
+  const col=isFirst?'#3ee684':isLast?'#ff5a5a':'#f7b731';
+  // Use global zero angle so waypoint arrow is absolute to field
+  // Subtract because heading is CW-positive while canvas angles are CCW-positive
+  const angle = getGlobalZeroAngle() - (wp.heading * Math.PI/180);
+  const arrowLen=r+16;
+
+  // Heading arrow line
+  ctx.strokeStyle=isSel?'rgba(255,255,255,.65)':'rgba(255,255,255,.28)';
+  ctx.lineWidth=1.5; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(cx,cy);
+  ctx.lineTo(cx+Math.cos(angle)*arrowLen, cy+Math.sin(angle)*arrowLen);
+  ctx.stroke(); ctx.setLineDash([]);
+  // Arrow tip
+  ctx.fillStyle=isSel?'rgba(255,255,255,.75)':'rgba(255,255,255,.32)';
+  ctx.save(); ctx.translate(cx+Math.cos(angle)*arrowLen, cy+Math.sin(angle)*arrowLen); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(5,0); ctx.lineTo(-3,-3); ctx.lineTo(-3,3); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Ghost footprint for selected
+  if(isSel) drawRobotAt(wp.x,wp.y,wp.heading,false,.1);
+
+  // Rotate handle ring when in rotate mode
+  if(mode==='rotate'&&isSel){
+    const hx=cx+Math.cos(angle)*(r+24), hy=cy+Math.sin(angle)*(r+24);
+    ctx.beginPath(); ctx.arc(hx,hy,5,0,Math.PI*2);
+    ctx.fillStyle='#a78bfa'; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+  }
+
+  // Dot
+  ctx.shadowColor=col; ctx.shadowBlur=isSel?12:0;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.fillStyle=isSel?col:col+'cc'; ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.38)'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.shadowBlur=0;
+
+  ctx.font=`600 ${Math.max(8,scale*6.5)}px 'JetBrains Mono',monospace`;
+  ctx.textAlign='center'; ctx.fillStyle='#111';
+  ctx.fillText(isFirst?'S':isLast?'E':String(i), cx, cy+scale*2.2);
+}
+
+// ── UTIL ──────────────────────────────────────────────────────────────────────
+function drawArrow(x,y,angle,size){ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.beginPath();ctx.moveTo(size,0);ctx.lineTo(-size*.6,-size*.5);ctx.lineTo(-size*.6,size*.5);ctx.closePath();ctx.fill();ctx.restore()}
+function drawHex(cx,cy,r){ctx.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i-Math.PI/6;ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a))}ctx.closePath();ctx.stroke()}
+function rrect(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath()}
+function checkSegBlocked(wp1,wp2){
+  const {imgX:ix1,imgY:iy1}=userToImg(wp1.x,wp1.y), {imgX:ix2,imgY:iy2}=userToImg(wp2.x,wp2.y);
+  for(const o of OBSTACLES){if(!o.blocked)continue;if(segRect(ix1,iy1,ix2,iy2,o.cx-o.w/2,o.cy-o.h/2,o.cx+o.w/2,o.cy+o.h/2))return true}return false}
+function segRect(x1,y1,x2,y2,rx1,ry1,rx2,ry2){const dx=x2-x1,dy=y2-y1;let t0=0,t1=1;for(const[p,q]of[[-dx,x1-rx1],[dx,rx2-x1],[-dy,y1-ry1],[dy,ry2-y1]]){if(p===0){if(q<0)return false;continue}const r=q/p;if(p<0){if(r>t1)return false;if(r>t0)t0=r}else{if(r<t0)return false;if(r<t1)t1=r}}return t0<=t1}
+
+// ── SIMULATION ────────────────────────────────────────────────────────────────
+function simToggle(){
+  if(!simCache||simCache.samples.length<2)return;
+  simPlaying=!simPlaying;
+  const btn=dom.simPlay;
+  if(simPlaying){
+    btn.textContent='⏸'; btn.classList.add('playing');
+    if(simT>=(simCache.totalTime-.01))simT=0;
+    simLastTS=null; simRAF=requestAnimationFrame(simFrame);
+  } else {btn.textContent='▶'; btn.classList.remove('playing'); if(simRAF)cancelAnimationFrame(simRAF)}
+}
+function simFrame(ts){
+  if(!simPlaying)return;
+  if(simLastTS!==null){const dt=(ts-simLastTS)/1000*simSpeed; simT=Math.min(simT+dt,simCache.totalTime)}
+  simLastTS=ts;
+  if(simCache.totalTime>0) dom.simScrubber.value=(simT/simCache.totalTime*1000).toFixed(0);
+  dom.simT.textContent=simT.toFixed(2);
+  const p=sampleAtTime(simT);
+  if(p) dom.simRobotInfo.textContent=`X=${p.x.toFixed(1)}" Y=${p.y.toFixed(1)}" θ=${p.heading.toFixed(1)}°`;
+  redraw();
+  if(simT>=simCache.totalTime){simPlaying=false;dom.simPlay.textContent='▶';dom.simPlay.classList.remove('playing');return}
+  simRAF=requestAnimationFrame(simFrame);
+}
+function simRewind(){simPlaying=false;dom.simPlay.textContent='▶';dom.simPlay.classList.remove('playing');if(simRAF)cancelAnimationFrame(simRAF);simT=0;dom.simScrubber.value=0;dom.simT.textContent='0.00';redraw()}
+function simStep(){if(!simCache)return;simT=Math.min(simT+0.1,simCache.totalTime);dom.simScrubber.value=simCache.totalTime>0?(simT/simCache.totalTime*1000).toFixed(0):0;dom.simT.textContent=simT.toFixed(2);redraw()}
+function simScrub(v){if(!simCache||!simCache.totalTime)return;simT=(v/1000)*simCache.totalTime;dom.simT.textContent=simT.toFixed(2);const p=sampleAtTime(simT);if(p)dom.simRobotInfo.textContent=`X=${p.x.toFixed(1)}" Y=${p.y.toFixed(1)}" θ=${p.heading.toFixed(1)}°`;redraw()}
+
+// ── HEADING DIALS ─────────────────────────────────────────────────────────────
+function drawDial(c, headingDeg) {
+  const ctx2=c.getContext('2d'), cx2=c.width/2, cy2=c.height/2, r2=cx2-1.5;
+  ctx2.clearRect(0,0,c.width,c.height);
+  ctx2.fillStyle='#1f2333'; ctx2.strokeStyle='rgba(255,255,255,.14)'; ctx2.lineWidth=1;
+  ctx2.beginPath(); ctx2.arc(cx2,cy2,r2,0,Math.PI*2); ctx2.fill(); ctx2.stroke();
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx2.strokeStyle='rgba(255,255,255,.18)';ctx2.lineWidth=.8;ctx2.beginPath();ctx2.moveTo(cx2+(r2-4)*Math.cos(a),cy2+(r2-4)*Math.sin(a));ctx2.lineTo(cx2+(r2-1)*Math.cos(a),cy2+(r2-1)*Math.sin(a));ctx2.stroke()}
+  // N tick (facing +Y user = canvas left = canvas angle 180°)
+  const nA=Math.PI; ctx2.strokeStyle='rgba(62,230,132,.5)'; ctx2.lineWidth=1;
+  ctx2.beginPath(); ctx2.moveTo(cx2+(r2-5)*Math.cos(nA),cy2+(r2-5)*Math.sin(nA)); ctx2.lineTo(cx2+(r2-1)*Math.cos(nA),cy2+(r2-1)*Math.sin(nA)); ctx2.stroke();
+  // Needle (use same heading->canvas conversion as main canvas)
+  // For the dial, show headings relative to the field center so 0° aligns with red-hub direction
+  const na = getGlobalZeroAngle() - (headingDeg * Math.PI/180);
+  ctx2.strokeStyle='#a78bfa'; ctx2.lineWidth=2;
+  ctx2.beginPath(); ctx2.moveTo(cx2,cy2); ctx2.lineTo(cx2+(r2-4)*Math.cos(na),cy2+(r2-4)*Math.sin(na)); ctx2.stroke();
+  ctx2.fillStyle='#a78bfa'; ctx2.beginPath(); ctx2.arc(cx2+(r2-4)*Math.cos(na),cy2+(r2-4)*Math.sin(na),2.5,0,Math.PI*2); ctx2.fill();
+  ctx2.fillStyle='rgba(255,255,255,.45)'; ctx2.beginPath(); ctx2.arc(cx2,cy2,2,0,Math.PI*2); ctx2.fill();
+}
+
+function makeHeadingDial(idx) {
+  const dc=document.createElement('canvas');
+  dc.width=36; dc.height=36; dc.className='dial-canvas';
+  dc.title='Drag to rotate heading';
+  drawDial(dc, waypoints[idx].heading);
+  let dragging=false, startAngle=0, startH=0;
+  function getA(e){const r=dc.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI}
+  dc.addEventListener('mousedown',e=>{dragging=true;startAngle=getA(e);startH=waypoints[idx].heading;dc.style.cursor='grabbing';e.stopPropagation()});
+  window.addEventListener('mousemove',e=>{
+    if(!dragging)return;
+    const delta=getA(e)-startAngle;
+    // getA returns canvas angle (CCW+); heading is CW+, so subtract delta
+    const newH=normAngle(startH - delta);
+    waypoints[idx].heading=newH;
+    drawDial(dc,newH);
+    const inp=document.getElementById(`hi-${idx}`);
+    if(inp)inp.value=Math.round(newH);
+    redraw();
+  });
+  window.addEventListener('mouseup',()=>{if(dragging){dragging=false;dc.style.cursor='grab'}});
+  return dc;
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────────────────────
+function updateSidebar() {
+  const list=dom.wpList;
+  if(!waypoints.length){list.innerHTML=EMPTY_WAYPOINTS_HTML;return}
+  const frag=document.createDocumentFragment();
+  waypoints.forEach((wp,i)=>{
+    const type=i===0?'start':i===waypoints.length-1?'end':'mid';
+    const lbl=i===0?'Start':i===waypoints.length-1?'End':`Waypoint ${i}`;
+    const div=document.createElement('div');
+    div.className=`wp-item ${type}${selectedWP===i?' selected':''}`;
+    div.innerHTML=`
+      <div class="wp-label">${lbl} ${i===0?'🟢':i===waypoints.length-1?'🔴':'🟡'}</div>
+      <div class="wp-coords">X=<span>${fmt(wp.x)}"</span> Y=<span>${fmt(wp.y)}"</span></div>
+      <div class="heading-row">
+        <div id="dial-wrap-${i}" class="dial-wrap"></div>
+        <div>
+          <div class="heading-meta-dir">Heading θ</div>
+          <input class="heading-inp" id="hi-${i}" type="number" value="${Math.round(wp.heading)}" min="-180" max="180">
+        </div>
+        <div class="heading-meta">
+          <div>${Math.round(wp.heading)}°</div>
+          <div class="heading-meta-dir">${hDir(wp.heading)}</div>
+        </div>
+      </div>
+      <button class="wp-del" data-delete-index="${i}">×</button>`;
+    div.addEventListener('click',()=>selectWP(i));
+    frag.appendChild(div);
+  });
+  list.innerHTML=''; list.appendChild(frag);
+  waypoints.forEach((_,i)=>{
+    const wrap=document.getElementById(`dial-wrap-${i}`);
+    if(wrap){
+      wrap.innerHTML='';
+      wrap.appendChild(makeHeadingDial(i));
+    }
+    const input=document.getElementById(`hi-${i}`);
+    if(input){
+      input.addEventListener('click',(event)=>event.stopPropagation());
+      input.addEventListener('input',(event)=>setWPH(i,parseFloat(event.target.value)||0));
+    }
+    const delBtn=list.querySelector(`[data-delete-index="${i}"]`);
+    if(delBtn){
+      delBtn.addEventListener('click',(event)=>{event.stopPropagation();deleteWP(i);});
+    }
+  });
+}
+
+function hDir(h){const n=((h%360)+360)%360;if(n<22.5||n>=337.5)return'+X →';if(n<67.5)return'↗';if(n<112.5)return'+Y ↑';if(n<157.5)return'↖';if(n<202.5)return'-X ←';if(n<247.5)return'↙';if(n<292.5)return'-Y ↓';return'↘'}
+function setWPH(i,deg){if(isNaN(deg))return;waypoints[i].heading=normAngle(deg);const wrap=document.getElementById(`dial-wrap-${i}`);if(wrap&&wrap.firstChild)drawDial(wrap.firstChild,waypoints[i].heading);redraw()}
+function updateOutput(){dom.javaOutput.textContent=genJava();dom.rawOutput.textContent=genRaw()}
+function showTab(t,btn){['waypoints','output','settings'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'block':'none');document.querySelectorAll('.sidebar-tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(t==='output')updateOutput()}
+function selectWP(i){selectedWP=i;updateSidebar();redraw()}
+function deleteWP(i){waypoints.splice(i,1);if(selectedWP>=waypoints.length)selectedWP=waypoints.length-1;updateSidebar();redraw()}
+function clearAll(){if(!waypoints.length)return;if(confirm('Clear all waypoints?')){waypoints=[];selectedWP=-1;simT=0;dom.simScrubber.value=0;updateSidebar();redraw()}}
+function setMode(m){
+  mode=m;
+  const pill=dom.modeIndicator;
+  pill.className='mode-pill '+m;
+  const L={add:'+ ADD WAYPOINT',drag:'↕ DRAG WAYPOINT',rotate:'↻ ROTATE HEADING',delete:'✕ DELETE WAYPOINT'};
+  pill.textContent=L[m];
+  canvas.style.cursor=m==='drag'?'grab':'crosshair';
+  const cls={add:'active-btn',drag:'active-btn-drag',rotate:'active-btn-r',delete:'active-btn danger'};
+  ['add','drag','rotate','delete'].forEach(mm=>{const b=document.getElementById('modeBtn-'+mm);if(b)b.className='btn'+(mm===m?' '+cls[mm]:'')});
+}
+function setAlliance(a){
+  alliance=a;
+  dom.btnBlue.className=a==='blue'?'active blue':'';
+  dom.btnRed.className=a==='red'?'active red':'';
+  redraw();
+}
+function copyCode(){navigator.clipboard.writeText(genJava()).then(()=>{dom.btnCopy.textContent='✓ Copied!';setTimeout(()=>dom.btnCopy.textContent='Copy Array',1500)})}
+
+// ── CODE GEN ──────────────────────────────────────────────────────────────────
+function genJava(){
+  if(!waypoints.length)return'// No waypoints yet';
+  const s=waypoints[0],e=waypoints[waypoints.length-1];
+  const L=[
+    '// FRC 2026 REBUILT – Auto Path',
+    `// Alliance: ${alliance.toUpperCase()} | WPs: ${waypoints.length} | θ: CW+, 0°=toward RED HUB`,
+    '',
+    `TrcPose2D startPose = new TrcPose2D(${fmt(s.x)}, ${fmt(s.y)}, ${fmt(s.heading)});`,
+    `TrcPose2D endPose   = new TrcPose2D(${fmt(e.x)}, ${fmt(e.y)}, ${fmt(e.heading)});`,
+  ];
+  if(waypoints.length>2){
+    L.push('');L.push('// Intermediate waypoints');
+    waypoints.slice(1,-1).forEach((wp,i)=>L.push(`TrcPose2D wp${i+1} = new TrcPose2D(${fmt(wp.x)}, ${fmt(wp.y)}, ${fmt(wp.heading)});`));
+  }
+  L.push('');L.push('// Pure Pursuit path array');
+  if(waypoints.length===2){L.push('TrcPose2D[] path = new TrcPose2D[] { startPose, endPose };')}
+  else{const mids=waypoints.slice(1,-1).map((_,i)=>`wp${i+1}`).join(', ');L.push('TrcPose2D[] path = new TrcPose2D[] {');L.push(`    startPose, ${mids}, endPose`);L.push('};')}
+  L.push('');L.push(`// Δ from start: dx=${fmt(e.x-s.x)}", dy=${fmt(e.y-s.y)}", dθ=${fmt(e.heading-s.heading)}°`);
+  return L.join('\n');
+}
+function genRaw(){if(!waypoints.length)return'// No waypoints yet';return waypoints.map((wp,i)=>{const l=i===0?'START':i===waypoints.length-1?'END':`WP${i}`;return`/* ${l} */ new TrcPose2D(${fmt(wp.x)}, ${fmt(wp.y)}, ${fmt(wp.heading)})`}).join(',\n')}
+function fmt(n){return(Math.round(n*100)/100).toFixed(2)}
+
+// ── CANVAS EVENTS ─────────────────────────────────────────────────────────────
+function getFC(e){const r=canvas.getBoundingClientRect();return canvasToUser((e.clientX-r.left)*(canvas.width/r.width),(e.clientY-r.top)*(canvas.height/r.height))}
+function nearestWP(ux,uy,thr=20/scale){let b=-1,bd=thr;for(let i=0;i<waypoints.length;i++){const d=Math.hypot(waypoints[i].x-ux,waypoints[i].y-uy);if(d<bd){bd=d;b=i}}return b}
+function calcH(from,to){
+  if(!from||!to||(from.x===to.x&&from.y===to.y)) return 90;
+  // Compute heading as clockwise-positive degrees where 0° points to red hub
+  const fC = userToCanvas(from.x, from.y);
+  const tC = userToCanvas(to.x, to.y);
+  const vecAng = Math.atan2(tC.cy - fC.cy, tC.cx - fC.cx); // canvas angle from->to
+  const globalZero = getGlobalZeroAngle();
+  // canvas->heading: headingDeg = (globalZero - vecAng) in degrees (CW-positive)
+  const hDeg = (globalZero - vecAng) * 180 / Math.PI;
+  return normAngle(hDeg);
+}
+
+canvas.addEventListener('mousedown',e=>{
+  const {x,y}=getFC(e);
+  if(mode==='add'){
+    const h=waypoints.length>0?calcH(waypoints[waypoints.length-1],{x,y}):90;
+    waypoints.push({x,y,heading:h});selectedWP=waypoints.length-1;updateSidebar();redraw();
+  } else if(mode==='drag'){
+    const idx=nearestWP(x,y);if(idx>=0){draggingWP=idx;selectedWP=idx;canvas.style.cursor='grabbing';redraw()}
+  } else if(mode==='rotate'){
+    const idx=nearestWP(x,y);if(idx>=0){rotatingWP=idx;selectedWP=idx;redraw()}
+  } else if(mode==='delete'){
+    const idx=nearestWP(x,y);if(idx>=0)deleteWP(idx);
+  }
+});
+
+canvas.addEventListener('mousemove',e=>{
+  const {x,y}=getFC(e);
+  dom.curX.textContent=fmt(x);
+  dom.curY.textContent=fmt(y);
+  if(draggingWP>=0&&mode==='drag'){waypoints[draggingWP]={...waypoints[draggingWP],x,y};updateSidebar();redraw()}
+  if(rotatingWP>=0&&mode==='rotate'){
+    const wp=waypoints[rotatingWP];
+    // Compute canvas angle from wp center to mouse, then convert to user heading
+    const {cx:wpCx,cy:wpCy}=userToCanvas(wp.x,wp.y);
+    const r=canvas.getBoundingClientRect();
+    const mpx=(e.clientX-r.left)*(canvas.width/r.width), mpy=(e.clientY-r.top)*(canvas.height/r.height);
+    const ca=Math.atan2(mpy-wpCy,mpx-wpCx);
+      const globalZero = getGlobalZeroAngle();
+      const h = normAngle((globalZero - ca) * 180 / Math.PI);
+    waypoints[rotatingWP].heading=h;
+    const inp=document.getElementById(`hi-${rotatingWP}`);if(inp)inp.value=Math.round(h);
+    const wrap=document.getElementById(`dial-wrap-${rotatingWP}`);if(wrap&&wrap.firstChild)drawDial(wrap.firstChild,h);
+    redraw();
+  }
+  // Tooltip
+  const idx=nearestWP(x,y,28/scale);
+  const tt=dom.tooltip;
+  if(idx>=0&&draggingWP<0&&rotatingWP<0){tt.style.display='block';tt.style.left=(e.clientX+14)+'px';tt.style.top=(e.clientY-10)+'px';tt.textContent=`WP${idx}: (${fmt(waypoints[idx].x)}", ${fmt(waypoints[idx].y)}") θ=${Math.round(waypoints[idx].heading)}°`}
+  else tt.style.display='none';
+});
+
+canvas.addEventListener('mouseup',()=>{draggingWP=-1;rotatingWP=-1;if(mode==='drag')canvas.style.cursor='grab';updateSidebar();redraw()});
+canvas.addEventListener('mouseleave',()=>{draggingWP=-1;rotatingWP=-1;dom.tooltip.style.display='none'});
+
+function bindUIEvents(){
+  document.querySelectorAll('[data-mode]').forEach(button=>{
+    button.addEventListener('click',()=>setMode(button.dataset.mode));
+  });
+
+  document.querySelectorAll('.sidebar-tabs [data-tab]').forEach(button=>{
+    button.addEventListener('click',()=>showTab(button.dataset.tab,button));
+  });
+
+  document.querySelectorAll('[data-alliance]').forEach(button=>{
+    button.addEventListener('click',()=>setAlliance(button.dataset.alliance));
+  });
+
+  dom.btnCopy.addEventListener('click',copyCode);
+  document.getElementById('btn-clear').addEventListener('click',clearAll);
+  dom.simPlay.addEventListener('click',simToggle);
+  document.getElementById('sim-rewind').addEventListener('click',simRewind);
+  document.getElementById('sim-step').addEventListener('click',simStep);
+  dom.simScrubber.addEventListener('input',(event)=>simScrub(event.target.value));
+  document.getElementById('sim-speed-sel').addEventListener('change',(event)=>{
+    simSpeed=parseFloat(event.target.value);
+  });
+
+  [dom.robotW, dom.robotL, dom.showGrid, dom.showGhost, dom.snapVal].forEach(element=>{
+    element.addEventListener('input',redraw);
+  });
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.key==='a'||e.key==='A')setMode('add');
+  if(e.key==='d'||e.key==='D')setMode('drag');
+  if(e.key==='r'||e.key==='R')setMode('rotate');
+  if(e.key==='x'||e.key==='X')setMode('delete');
+  if(e.key==='Escape'){selectedWP=-1;redraw()}
+  if(e.key==='Delete'&&selectedWP>=0)deleteWP(selectedWP);
+  if(e.key===' '){e.preventDefault();simToggle()}
+  if(e.key==='Home')simRewind();
+  if(e.key==='z'&&(e.ctrlKey||e.metaKey)&&waypoints.length>0){waypoints.pop();if(selectedWP>=waypoints.length)selectedWP=-1;updateSidebar();redraw()}
+  if((e.ctrlKey||e.metaKey)&&e.key==='c')copyCode();
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('resize',resize);
+bindUIEvents();
+resize();
+setMode('add');
+updateSidebar();
+</script>
+</body>
+</html>
