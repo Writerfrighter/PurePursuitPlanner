@@ -20,6 +20,13 @@ export function normAngle(deg: number): number {
   return out;
 }
 
+function normAngleRad(rad: number): number {
+  let out = rad;
+  while (out > Math.PI) out -= Math.PI * 2;
+  while (out < -Math.PI) out += Math.PI * 2;
+  return out;
+}
+
 export function catmullRom(p0: Waypoint, p1: Waypoint, p2: Waypoint, p3: Waypoint, t: number): { x: number; y: number } {
   const t2 = t * t;
   const t3 = t2 * t;
@@ -81,6 +88,116 @@ function applyTurnRateLimit(samples: Array<{ x: number; y: number; heading: numb
     const limitedDelta = clamp(desiredDelta, -maxDelta, maxDelta);
     samples[i].heading = normAngle(samples[i - 1].heading + limitedDelta);
   }
+}
+
+export interface PurePursuitPreviewOptions {
+  lookahead: number;
+  stepDist?: number;
+  maxTurnRateDegPerSec?: number;
+  maxVel?: number;
+  maxAccel?: number;
+  maxDecel?: number;
+}
+
+function nearestRefIndex(samples: SimPath['samples'], x: number, y: number, startIndex: number): number {
+  const start = clamp(startIndex, 0, samples.length - 1);
+  const end = Math.min(samples.length - 1, start + 80);
+  let best = start;
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (let i = start; i <= end; i++) {
+    const s = samples[i];
+    const d = Math.hypot(s.x - x, s.y - y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+
+  return best;
+}
+
+function findLookaheadPoint(samples: SimPath['samples'], startIdx: number, lookahead: number): { x: number; y: number } {
+  let arc = 0;
+  const begin = clamp(startIdx, 0, samples.length - 1);
+
+  for (let i = begin + 1; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    arc += Math.hypot(b.x - a.x, b.y - a.y);
+    if (arc >= lookahead) {
+      return { x: b.x, y: b.y };
+    }
+  }
+
+  const last = samples[samples.length - 1];
+  return { x: last.x, y: last.y };
+}
+
+export function buildPurePursuitPreviewPath(referencePath: SimPath | null, options: PurePursuitPreviewOptions): SimPath | null {
+  if (!referencePath || referencePath.samples.length < 2) return referencePath;
+
+  const stepDist = clamp(options.stepDist ?? options.lookahead / 8, 0.5, 3);
+  const lookahead = Math.max(1, options.lookahead);
+  const maxVel = Math.max(1, options.maxVel ?? 150);
+  const maxAccel = Math.max(1, options.maxAccel ?? 120);
+  const maxDecel = Math.max(1, options.maxDecel ?? 140);
+  const maxTurnRateRadPerStep = options.maxTurnRateDegPerSec && options.maxTurnRateDegPerSec > 0
+    ? ((options.maxTurnRateDegPerSec * Math.PI) / 180) * (stepDist / maxVel)
+    : Number.POSITIVE_INFINITY;
+
+  const first = referencePath.samples[0];
+  const second = referencePath.samples[1];
+  const last = referencePath.samples[referencePath.samples.length - 1];
+  let x = first.x;
+  let y = first.y;
+  let theta = Math.atan2(second.y - first.y, second.x - first.x);
+  let anchorIdx = 0;
+  const maxSteps = 20000;
+
+  const out: SimPath['samples'] = [{ x, y, heading: first.heading, t: 0 }];
+
+  for (let i = 0; i < maxSteps; i++) {
+    anchorIdx = nearestRefIndex(referencePath.samples, x, y, anchorIdx);
+    const distToEnd = Math.hypot(last.x - x, last.y - y);
+    if (anchorIdx >= referencePath.samples.length - 2 && distToEnd <= stepDist) break;
+
+    const target = findLookaheadPoint(referencePath.samples, anchorIdx, lookahead);
+    const targetAngle = Math.atan2(target.y - y, target.x - x);
+    const headingErr = normAngleRad(targetAngle - theta);
+    const curvature = (2 * Math.sin(headingErr)) / lookahead;
+    let dTheta = curvature * stepDist;
+    dTheta = clamp(dTheta, -maxTurnRateRadPerStep, maxTurnRateRadPerStep);
+
+    theta = normAngleRad(theta + dTheta);
+    x += Math.cos(theta) * stepDist;
+    y += Math.sin(theta) * stepDist;
+    out.push({ x, y, heading: 0, t: 0 });
+  }
+
+  out.push({ x: last.x, y: last.y, heading: last.heading, t: 0 });
+
+  let totalDist = 0;
+  const dists = [0];
+  for (let i = 1; i < out.length; i++) {
+    totalDist += Math.hypot(out[i].x - out[i - 1].x, out[i].y - out[i - 1].y);
+    dists.push(totalDist);
+  }
+
+  const totalTime = Math.max(0.01, travelTimeForDistance(totalDist, maxVel, maxAccel, maxDecel));
+
+  for (let i = 0; i < out.length; i++) {
+    const progress = totalDist > 0 ? dists[i] / totalDist : 0;
+    const refPose = sampleAtTime(referencePath, referencePath.totalTime * progress);
+    out[i].heading = refPose ? refPose.heading : last.heading;
+    out[i].t = timeAtDistance(dists[i], totalDist, maxVel, maxAccel, maxDecel);
+  }
+
+  return {
+    samples: out,
+    totalTime,
+    totalDist,
+  };
 }
 
 export function buildSimPath(waypoints: Waypoint[], settings: PlannerSettings): SimPath | null {

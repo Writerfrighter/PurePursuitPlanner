@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_OBSTACLES, DEFAULT_SETTINGS, FIELD } from './plannerConfig';
-import { buildSimPath, getFirstPathCollision, normAngle, sampleAtTime } from './plannerMath';
+import { buildPurePursuitPreviewPath, buildSimPath, getFirstPathCollision, normAngle, sampleAtTime } from './plannerMath';
 import type { Alliance, Mode, Obstacle, PlannerSettings, TabKey, Waypoint } from './types';
+
+type PathDisplayMode = 'catmull' | 'purePursuit';
 
 const modeLabel: Record<Mode, string> = {
   add: '+ ADD WAYPOINT',
@@ -37,6 +39,8 @@ export default function App() {
   const [simT, setSimT] = useState(0);
   const [simPlaying, setSimPlaying] = useState(false);
   const [simSpeed, setSimSpeed] = useState(1);
+  const [pathDisplayMode, setPathDisplayMode] = useState<PathDisplayMode>('purePursuit');
+  const [purePursuitLookahead, setPurePursuitLookahead] = useState(10);
   const [mouseCoord, setMouseCoord] = useState({ x: 0, y: 0 });
   const [tooltip, setTooltip] = useState<{ show: boolean; text: string; x: number; y: number }>({ show: false, text: '', x: 0, y: 0 });
 
@@ -51,6 +55,20 @@ export default function App() {
   const simLastTsRef = useRef<number | null>(null);
 
   const simPath = useMemo(() => buildSimPath(waypoints, settings), [waypoints, settings]);
+  const purePursuitPreviewPath = useMemo(
+    () => buildPurePursuitPreviewPath(simPath, {
+      lookahead: purePursuitLookahead,
+      maxTurnRateDegPerSec: settings.maxTurnRate,
+      maxVel: settings.maxVel,
+      maxAccel: settings.maxAccel,
+      maxDecel: settings.maxDecel,
+    }),
+    [purePursuitLookahead, settings.maxAccel, settings.maxDecel, settings.maxTurnRate, settings.maxVel, simPath],
+  );
+  const activePath = useMemo(
+    () => (pathDisplayMode === 'purePursuit' ? purePursuitPreviewPath : simPath),
+    [pathDisplayMode, purePursuitPreviewPath, simPath],
+  );
 
   const userToImg = useCallback((ux: number, uy: number): { imgX: number; imgY: number } => ({ imgX: FIELD.width - uy, imgY: ux }), []);
   const imgToUser = useCallback((ix: number, iy: number): { x: number; y: number } => ({ x: iy, y: FIELD.width - ix }), []);
@@ -68,8 +86,8 @@ export default function App() {
   }, [obstacles]);
 
   const collisionInfo = useMemo(
-    () => getFirstPathCollision(simPath, obstacles, settings.robotW, settings.robotL, getGlobalZeroAngle(), userToImg),
-    [getGlobalZeroAngle, obstacles, settings.robotL, settings.robotW, simPath, userToImg],
+    () => getFirstPathCollision(activePath, obstacles, settings.robotW, settings.robotL, getGlobalZeroAngle(), userToImg),
+    [activePath, getGlobalZeroAngle, obstacles, settings.robotL, settings.robotW, userToImg],
   );
   const collision = collisionInfo.collides;
 
@@ -541,16 +559,18 @@ export default function App() {
     };
 
     const drawPath = (): void => {
-      if (!simPath || !simPath.samples.length) return;
+      const renderPath = activePath;
+      if (!renderPath || !renderPath.samples.length) return;
 
       ctx.beginPath();
-      const first = userToCanvas(simPath.samples[0].x, simPath.samples[0].y);
+      const first = userToCanvas(renderPath.samples[0].x, renderPath.samples[0].y);
       ctx.moveTo(first.cx, first.cy);
-      for (let i = 1; i < simPath.samples.length; i++) {
-        const p = userToCanvas(simPath.samples[i].x, simPath.samples[i].y);
+      for (let i = 1; i < renderPath.samples.length; i++) {
+        const p = userToCanvas(renderPath.samples[i].x, renderPath.samples[i].y);
         ctx.lineTo(p.cx, p.cy);
       }
-      ctx.strokeStyle = collision ? 'rgba(255,80,80,.75)' : 'rgba(62,230,132,.55)';
+      const okColor = pathDisplayMode === 'purePursuit' ? 'rgba(74,158,255,.68)' : 'rgba(62,230,132,.55)';
+      ctx.strokeStyle = collision ? 'rgba(255,80,80,.75)' : okColor;
       ctx.lineWidth = 2.5;
       ctx.setLineDash(collision ? [7, 4] : []);
       ctx.stroke();
@@ -570,15 +590,15 @@ export default function App() {
 
     drawPath();
 
-    if (settings.showGhost && simPath && simT > 0.05) {
+    if (settings.showGhost && activePath && simT > 0.05) {
       for (let g = 6; g >= 1; g--) {
-        const pose = sampleAtTime(simPath, simT * (g / 6));
+        const pose = sampleAtTime(activePath, simT * (g / 6));
         if (pose) drawRobot(pose.x, pose.y, pose.heading, (g / 6) * 0.8);
       }
     }
 
-    if (simPath && simT > 0) {
-      const pose = sampleAtTime(simPath, simT);
+    if (activePath && simT > 0) {
+      const pose = sampleAtTime(activePath, simT);
       if (pose) drawRobot(pose.x, pose.y, pose.heading, 1);
     }
 
@@ -627,19 +647,19 @@ export default function App() {
       ctx.textAlign = 'left';
       ctx.fillText('COLLISION', 8, 14);
     }
-  }, [alliance, collision, collisionInfo.heading, collisionInfo.t, collisionInfo.x, collisionInfo.y, getGlobalZeroAngle, obstacles, selectedWp, settings, simPath, simT, userToCanvas, waypoints]);
+  }, [activePath, alliance, collision, collisionInfo.heading, collisionInfo.t, collisionInfo.x, collisionInfo.y, getGlobalZeroAngle, obstacles, pathDisplayMode, selectedWp, settings, simT, userToCanvas, waypoints]);
 
   useEffect(() => {
-    if (!simPlaying || !simPath) return;
+    if (!simPlaying || !activePath) return;
 
     const frame = (ts: number): void => {
-      if (!simPath) return;
+      if (!activePath) return;
       const prev = simLastTsRef.current;
       if (prev !== null) {
         const dt = (ts - prev) / 1000 * simSpeed;
         setSimT((old) => {
-          const next = Math.min(old + dt, simPath.totalTime);
-          if (next >= simPath.totalTime) setSimPlaying(false);
+          const next = Math.min(old + dt, activePath.totalTime);
+          if (next >= activePath.totalTime) setSimPlaying(false);
           return next;
         });
       }
@@ -653,7 +673,7 @@ export default function App() {
       simRafRef.current = null;
       simLastTsRef.current = null;
     };
-  }, [simPath, simPlaying, simSpeed]);
+  }, [activePath, simPlaying, simSpeed]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -669,7 +689,7 @@ export default function App() {
         setWaypoints((prev) => prev.filter((_, i) => i !== selectedWp));
         setSelectedWp(-1);
       }
-      if (event.key === ' ' && simPath) {
+      if (event.key === ' ' && activePath) {
         event.preventDefault();
         setSimPlaying((p) => !p);
       }
@@ -677,9 +697,9 @@ export default function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedWp, simPath]);
+  }, [activePath, selectedWp]);
 
-  const simPose = simPath ? sampleAtTime(simPath, simT) : null;
+  const simPose = activePath ? sampleAtTime(activePath, simT) : null;
 
   const onCanvasDown = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     const pos = getCanvasEventCoord(event);
@@ -789,7 +809,7 @@ export default function App() {
               <button className={`sim-btn ${simPlaying ? 'playing' : ''}`} onClick={() => setSimPlaying((p) => !p)}>
                 {simPlaying ? '⏸' : '▶'}
               </button>
-              <button className="sim-btn" onClick={() => setSimT((t) => Math.min((simPath?.totalTime ?? 0), t + 0.1))}>⏭</button>
+              <button className="sim-btn" onClick={() => setSimT((t) => Math.min((activePath?.totalTime ?? 0), t + 0.1))}>⏭</button>
             </div>
             <input
               id="sim-scrubber"
@@ -798,13 +818,13 @@ export default function App() {
               max={1000}
               step={1}
               title="Simulation timeline scrubber"
-              value={simPath?.totalTime ? Math.round((simT / simPath.totalTime) * 1000) : 0}
+              value={activePath?.totalTime ? Math.round((simT / activePath.totalTime) * 1000) : 0}
               onChange={(event) => {
-                if (!simPath?.totalTime) return;
-                setSimT((Number(event.target.value) / 1000) * simPath.totalTime);
+                if (!activePath?.totalTime) return;
+                setSimT((Number(event.target.value) / 1000) * activePath.totalTime);
               }}
             />
-            <div className="sim-time">t = <span>{fmt(simT)}</span>s / <span>{fmt(simPath?.totalTime ?? 0)}</span>s</div>
+            <div className="sim-time">t = <span>{fmt(simT)}</span>s / <span>{fmt(activePath?.totalTime ?? 0)}</span>s</div>
             <div className="sim-speed">
               ×
               <select title="Simulation speed" value={simSpeed} onChange={(event) => setSimSpeed(Number(event.target.value))}>
@@ -822,7 +842,7 @@ export default function App() {
           <div className="coord-bar">
             <div>X=<span>{fmt(mouseCoord.x)}</span>" Y=<span>{fmt(mouseCoord.y)}</span>"</div>
             <div>WPs: <span>{waypoints.length}</span></div>
-            <div>Dist: <span>{fmt(simPath?.totalDist ?? 0)}</span>"</div>
+            <div>Dist: <span>{fmt(activePath?.totalDist ?? 0)}</span>"</div>
             {collision && <div>At: <span>{fmt(collisionInfo.t)}</span>s</div>}
             {collision && <div className="collision-badge visible">⚠ Collision</div>}
           </div>
@@ -899,6 +919,14 @@ export default function App() {
               <div className="section-hdr">Display</div>
               <div className="form-row"><label>Show grid</label><input title="Toggle field grid" type="checkbox" checked={settings.showGrid} onChange={(e) => setSettings((s) => ({ ...s, showGrid: e.target.checked }))} /></div>
               <div className="form-row"><label>Ghost trail</label><input title="Toggle robot ghost trail" type="checkbox" checked={settings.showGhost} onChange={(e) => setSettings((s) => ({ ...s, showGhost: e.target.checked }))} /></div>
+              <div className="form-row">
+                <label>Path line</label>
+                <select title="Select displayed path line type" value={pathDisplayMode} onChange={(e) => setPathDisplayMode(e.target.value as PathDisplayMode)}>
+                  <option value="catmull">Catmull reference</option>
+                  <option value="purePursuit">Pure pursuit preview</option>
+                </select>
+              </div>
+              <div className="form-row"><label>PP lookahead (in)</label><input title="Pure pursuit lookahead distance in inches" type="number" min={1} value={purePursuitLookahead} onChange={(e) => setPurePursuitLookahead(Math.max(1, Number(e.target.value) || 1))} /></div>
               <div className="form-row"><label>Snap (in)</label><input title="Waypoint snap size in inches" type="number" value={settings.snap} onChange={(e) => setSettings((s) => ({ ...s, snap: Number(e.target.value) }))} /></div>
             </div>
           )}
