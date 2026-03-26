@@ -2,7 +2,7 @@ export type Alliance = 'blue' | 'red';
 
 export type Mode = 'add' | 'drag' | 'rotate' | 'delete';
 
-export type TabKey = 'waypoints' | 'output' | 'settings' | 'obstacles';
+export type TabKey = 'waypoints' | 'output' | 'settings' | 'obstacles' | 'import';
 
 export interface Waypoint {
   x: number;

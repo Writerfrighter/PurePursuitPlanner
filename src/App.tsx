@@ -127,6 +127,55 @@ export default function App() {
     return normAngle((vec - getGlobalZeroAngle()) * 180 / Math.PI);
   };
 
+  const parseAndImportWaypoints = (text: string): Waypoint[] => {
+    const parsed: Waypoint[] = [];
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+    
+    for (const line of lines) {
+      // Skip comments and empty lines
+      if (line.startsWith('//') || line.startsWith('#') || !line) continue;
+      
+      // Try JSON format first [{\"x\": 1, \"y\": 2, \"heading\": 0}, ...]
+      if (line.startsWith('{') || line.startsWith('[')) {
+        try {
+          const obj = JSON.parse(line);
+          if (Array.isArray(obj)) {
+            for (const item of obj) {
+              if (item.x !== undefined && item.y !== undefined) {
+                parsed.push({ x: -item.x, y: item.y, heading: item.heading ?? 0 });
+              }
+            }
+          } else if (obj.x !== undefined && obj.y !== undefined) {
+            parsed.push({ x: -obj.x, y: obj.y, heading: obj.heading ?? 0 });
+          }
+          continue;
+        } catch (e) {}
+      }
+      
+      // Try TrcPose2D format: new TrcPose2D(x, y, heading)
+      const trcMatch = line.match(/TrcPose2D\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/);
+      if (trcMatch) {
+        const [, xStr, yStr, hStr] = trcMatch;
+        parsed.push({ x: -Number(xStr), y: Number(yStr), heading: Number(hStr) });
+        continue;
+      }
+      
+      // Try CSV/space/comma separated: x,y,heading or x y heading
+      const parts = line.replace(/[,\s]+/g, ' ').split(' ').filter(p => p);
+      if (parts.length >= 2) {
+        const x = Number(parts[0]);
+        const y = Number(parts[1]);
+        const h = parts.length >= 3 ? Number(parts[2]) : 0;
+        if (!Number.isNaN(x) && !Number.isNaN(y)) {
+          parsed.push({ x: -x, y, heading: h });
+          continue;
+        }
+      }
+    }
+    
+    return parsed;
+  };
+
   const generateJava = (): string => {
     if (!waypoints.length) return '// No waypoints yet';
     const s = waypoints[0];
@@ -850,10 +899,11 @@ export default function App() {
 
         <div className="sidebar">
           <div className="sidebar-tabs">
-            <button className={tab === 'waypoints' ? 'active' : ''} onClick={() => setTab('waypoints')}>Waypoints</button>
-            <button className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>Java</button>
-            <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Settings</button>
-            <button className={tab === 'obstacles' ? 'active' : ''} onClick={() => setTab('obstacles')}>Obstacles</button>
+              <button title="Waypoints" className={tab === 'waypoints' ? 'active' : ''} onClick={() => setTab('waypoints')}>Wpts</button>
+              <button title="Import" className={tab === 'import' ? 'active' : ''} onClick={() => setTab('import')}>Imp</button>
+              <button title="Java" className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>Java</button>
+              <button title="Settings" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Set</button>
+              <button title="Obstacles" className={tab === 'obstacles' ? 'active' : ''} onClick={() => setTab('obstacles')}>Obs</button>
           </div>
 
           {tab === 'waypoints' && (
@@ -870,7 +920,7 @@ export default function App() {
                 {waypoints.map((wp, i) => (
                   <div key={i} className={`wp-item ${i === 0 ? 'start' : i === waypoints.length - 1 ? 'end' : 'mid'} ${selectedWp === i ? 'selected' : ''}`} onClick={() => setSelectedWp(i)}>
                     <div className="wp-label">{i === 0 ? 'Start' : i === waypoints.length - 1 ? 'End' : `Waypoint ${i}`}</div>
-                    <div className="wp-coords">X=<span>{fmt(wp.x)}"</span> Y=<span>{fmt(wp.y)}"</span></div>
+                    <div className="wp-coords">X=<span>{fmt(-wp.x)}"</span> Y=<span>{fmt(wp.y)}"</span></div>
                     <div className="heading-row">
                       <canvas
                         ref={(el) => {
@@ -950,6 +1000,7 @@ export default function App() {
                         }}
                       />
                       <input
+                        key={`heading-${i}-${Math.round(wp.heading)}`}
                         className="heading-inp"
                         type="text"
                         title="Waypoint heading in degrees (e.g. -90, 0, 45)"
@@ -999,6 +1050,65 @@ export default function App() {
                     <button className="wp-del" onClick={(event) => { event.stopPropagation(); deleteWp(i); }}>×</button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {tab === 'import' && (
+            <div className="sidebar-content">
+              <div className="section-hdr">Import Waypoints</div>
+              <div className="info-box">
+                Supports: JSON, TrcPose2D arrays, CSV, or space-separated values.
+              </div>
+              <textarea
+                id="import-textarea"
+                placeholder={`Paste waypoints here...\n\nFormats:\n[{"x":100,"y":200,"heading":45}]\nTrcPose2D(100,200,45)\n100 200 45`}
+                style={{
+                  width: '100%',
+                  minHeight: '200px',
+                  padding: '8px',
+                  fontFamily: 'monospace',
+                  fontSize: '10px',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--surface2)',
+                  color: 'var(--text)',
+                  resize: 'vertical',
+                  marginBottom: '8px'
+                }}
+              />
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                <button
+                  className="btn primary"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    const textarea = document.getElementById('import-textarea') as HTMLTextAreaElement;
+                    if (textarea?.value.trim()) {
+                      const imported = parseAndImportWaypoints(textarea.value);
+                      if (imported.length > 0) {
+                        setWaypoints(imported);
+                        setSelectedWp(-1);
+                        textarea.value = '';
+                        setTab('waypoints');
+                      }
+                    }
+                  }}
+                >
+                  Import
+                </button>
+                <button
+                  className="btn"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    const textarea = document.getElementById('import-textarea') as HTMLTextAreaElement;
+                    if (textarea) textarea.value = '';
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="info-box">
+                <strong>Format Examples:</strong><br />JSON:<br />[{"{"}x":-100,"y":200,"heading":45{"}"}]<br /><br />TrcPose2D:<br />TrcPose2D(-100,200,45)<br /><br />CSV/Space-separated:<br />-100 200 45
               </div>
             </div>
           )}
