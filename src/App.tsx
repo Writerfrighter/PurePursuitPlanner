@@ -124,7 +124,7 @@ export default function App() {
     const a = userToCanvas(from.x, from.y);
     const b = userToCanvas(to.x, to.y);
     const vec = Math.atan2(b.cy - a.cy, b.cx - a.cx);
-    return normAngle((getGlobalZeroAngle() - vec) * 180 / Math.PI);
+    return normAngle((vec - getGlobalZeroAngle()) * 180 / Math.PI);
   };
 
   const generateJava = (): string => {
@@ -136,14 +136,14 @@ export default function App() {
       `// Alliance: ${alliance.toUpperCase()} | WPs: ${waypoints.length} | theta CW+, 0°=toward RED HUB`,
       `// Limits: v=${fmt(settings.maxVel)} in/s, a=${fmt(settings.maxAccel)} in/s^2, decel=${fmt(settings.maxDecel)} in/s^2, turn=${fmt(settings.maxTurnRate)} deg/s`,
       '',
-      `TrcPose2D startPose = new TrcPose2D(${fmt(s.x)}, ${fmt(s.y)}, ${fmt(s.heading)});`,
-      `TrcPose2D endPose   = new TrcPose2D(${fmt(e.x)}, ${fmt(e.y)}, ${fmt(e.heading)});`,
+      `TrcPose2D startPose = new TrcPose2D(${fmt(s.x)}, ${fmt(s.y)}, ${fmt(-s.heading)});`,
+      `TrcPose2D endPose   = new TrcPose2D(${fmt(e.x)}, ${fmt(e.y)}, ${fmt(-e.heading)});`,
     ];
     if (waypoints.length > 2) {
       lines.push('');
       lines.push('// Intermediate waypoints');
       waypoints.slice(1, -1).forEach((wp, i) => {
-        lines.push(`TrcPose2D wp${i + 1} = new TrcPose2D(${fmt(wp.x)}, ${fmt(wp.y)}, ${fmt(wp.heading)});`);
+        lines.push(`TrcPose2D wp${i + 1} = new TrcPose2D(${fmt(wp.x)}, ${fmt(wp.y)}, ${fmt(-wp.heading)});`);
       });
     }
     lines.push('');
@@ -515,7 +515,7 @@ export default function App() {
       const p = userToCanvas(x, y);
       const rw = settings.robotW * scale;
       const rl = settings.robotL * scale;
-      const angle = getGlobalZeroAngle() - headingDeg * Math.PI / 180 + Math.PI / 2;
+      const angle = getGlobalZeroAngle() + headingDeg * Math.PI / 180;
       const c = alliance === 'blue' ? '74,158,255' : '255,90,90';
       ctx.save();
       ctx.translate(p.cx, p.cy);
@@ -534,7 +534,7 @@ export default function App() {
       const p = userToCanvas(x, y);
       const rw = settings.robotW * scale;
       const rl = settings.robotL * scale;
-      const angle = getGlobalZeroAngle() - headingDeg * Math.PI / 180 + Math.PI / 2;
+      const angle = getGlobalZeroAngle() + headingDeg * Math.PI / 180;
 
       ctx.save();
       ctx.translate(p.cx, p.cy);
@@ -612,7 +612,7 @@ export default function App() {
       const isSelected = i === selectedWp;
       const color = isFirst ? '#3ee684' : isLast ? '#ff5a5a' : '#f7b731';
       const r = Math.max(7, scale * 4.2);
-      const ang = getGlobalZeroAngle() - wp.heading * Math.PI / 180;
+      const ang = getGlobalZeroAngle() + wp.heading * Math.PI / 180;
 
       ctx.strokeStyle = isSelected ? 'rgba(255,255,255,.65)' : 'rgba(255,255,255,.28)';
       ctx.lineWidth = 1.5;
@@ -705,7 +705,7 @@ export default function App() {
     const pos = getCanvasEventCoord(event);
     if (mode === 'add') {
       setWaypoints((prev) => {
-        const heading = prev.length ? calcHeadingFromTo(prev[prev.length - 1], pos) : 90;
+        const heading = prev.length ? calcHeadingFromTo(prev[prev.length - 1], pos) : 0;
         return [...prev, { ...pos, heading }];
       });
       setSelectedWp(waypoints.length);
@@ -742,7 +742,7 @@ export default function App() {
       const mpx = (event.clientX - r.left) * (canvas.width / r.width);
       const mpy = (event.clientY - r.top) * (canvas.height / r.height);
       const ca = Math.atan2(mpy - p.cy, mpx - p.cx);
-      const h = normAngle((getGlobalZeroAngle() - ca) * 180 / Math.PI);
+      const h = normAngle((ca - getGlobalZeroAngle()) * 180 / Math.PI);
       setWaypoints((prev) => prev.map((item, i) => (i === idx ? { ...item, heading: h } : item)));
     }
 
@@ -753,7 +753,7 @@ export default function App() {
         show: true,
         x: event.clientX + 14,
         y: event.clientY - 10,
-        text: `WP${idx}: (${fmt(wp.x)}", ${fmt(wp.y)}") theta=${Math.round(wp.heading)}°`,
+        text: `WP${idx}: (${fmt(wp.x)}", ${fmt(wp.y)}") theta=${Math.round(-wp.heading)}°`,
       });
     } else {
       setTooltip((t) => ({ ...t, show: false }));
@@ -835,7 +835,7 @@ export default function App() {
               </select>
             </div>
             <div className="sim-info">
-              <span>{simPose ? `X=${fmt(simPose.x)}" Y=${fmt(simPose.y)}" θ=${fmt(simPose.heading)}°` : 'place waypoints to simulate'}</span>
+              <span>{simPose ? `X=${fmt(simPose.x)}" Y=${fmt(simPose.y)}" θ=${fmt(-simPose.heading)}°` : 'place waypoints to simulate'}</span>
             </div>
           </div>
 
@@ -872,16 +872,122 @@ export default function App() {
                     <div className="wp-label">{i === 0 ? 'Start' : i === waypoints.length - 1 ? 'End' : `Waypoint ${i}`}</div>
                     <div className="wp-coords">X=<span>{fmt(wp.x)}"</span> Y=<span>{fmt(wp.y)}"</span></div>
                     <div className="heading-row">
+                      <canvas
+                        ref={(el) => {
+                          if (!el) return;
+                          el.width = 36;
+                          el.height = 36;
+                          const ctx2 = el.getContext('2d');
+                          if (!ctx2) return;
+                          const cx2 = el.width / 2, cy2 = el.height / 2, r2 = cx2 - 1.5;
+                          ctx2.clearRect(0, 0, el.width, el.height);
+                          ctx2.fillStyle = '#1f2333';
+                          ctx2.strokeStyle = 'rgba(255,255,255,.14)';
+                          ctx2.lineWidth = 1;
+                          ctx2.beginPath();
+                          ctx2.arc(cx2, cy2, r2, 0, Math.PI * 2);
+                          ctx2.fill();
+                          ctx2.stroke();
+                          // Tick marks
+                          for (let i = 0; i < 8; i++) {
+                            const a = i * Math.PI / 4;
+                            ctx2.strokeStyle = 'rgba(255,255,255,.18)';
+                            ctx2.lineWidth = 0.8;
+                            ctx2.beginPath();
+                            ctx2.moveTo(cx2 + (r2 - 4) * Math.cos(a), cy2 + (r2 - 4) * Math.sin(a));
+                            ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(a), cy2 + (r2 - 1) * Math.sin(a));
+                            ctx2.stroke();
+                          }
+                          // N tick
+                          const nA = Math.PI;
+                          ctx2.strokeStyle = 'rgba(62,230,132,.5)';
+                          ctx2.lineWidth = 1;
+                          ctx2.beginPath();
+                          ctx2.moveTo(cx2 + (r2 - 5) * Math.cos(nA), cy2 + (r2 - 5) * Math.sin(nA));
+                          ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(nA), cy2 + (r2 - 1) * Math.sin(nA));
+                          ctx2.stroke();
+                          // Needle
+                          const na = getGlobalZeroAngle() + wp.heading * Math.PI / 180;
+                          ctx2.strokeStyle = '#a78bfa';
+                          ctx2.lineWidth = 2;
+                          ctx2.beginPath();
+                          ctx2.moveTo(cx2, cy2);
+                          ctx2.lineTo(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na));
+                          ctx2.stroke();
+                          ctx2.fillStyle = '#a78bfa';
+                          ctx2.beginPath();
+                          ctx2.arc(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na), 2.5, 0, Math.PI * 2);
+                          ctx2.fill();
+                          ctx2.fillStyle = 'rgba(255,255,255,.45)';
+                          ctx2.beginPath();
+                          ctx2.arc(cx2, cy2, 2, 0, Math.PI * 2);
+                          ctx2.fill();
+                        }}
+                        className="dial-canvas"
+                        title="Drag to rotate heading"
+                        style={{ cursor: 'grab', borderRadius: '50%', display: 'block', flexShrink: 0, width: '36px', height: '36px' }}
+                        onMouseDown={(event) => {
+                          const el = event.currentTarget;
+                          const r = el.getBoundingClientRect();
+                          const startAngle = Math.atan2(event.clientY - (r.top + r.height / 2), event.clientX - (r.left + r.width / 2)) * 180 / Math.PI;
+                          const startH = wp.heading;
+                          const handleMouseMove = (e: MouseEvent) => {
+                            const r2 = el.getBoundingClientRect();
+                            const currentAngle = Math.atan2(e.clientY - (r2.top + r2.height / 2), e.clientX - (r2.left + r2.width / 2)) * 180 / Math.PI;
+                            const delta = currentAngle - startAngle;
+                            const newH = normAngle(startH + delta);
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: newH } : item)));
+                          };
+                          const handleMouseUp = () => {
+                            window.removeEventListener('mousemove', handleMouseMove);
+                            window.removeEventListener('mouseup', handleMouseUp);
+                            el.style.cursor = 'grab';
+                          };
+                          el.style.cursor = 'grabbing';
+                          window.addEventListener('mousemove', handleMouseMove);
+                          window.addEventListener('mouseup', handleMouseUp);
+                          event.stopPropagation();
+                        }}
+                      />
                       <input
                         className="heading-inp"
-                        type="number"
-                        title="Waypoint heading in degrees"
-                        value={Math.round(wp.heading)}
-                        min={-180}
-                        max={180}
-                        onChange={(event) => {
-                          const next = Number(event.target.value);
-                          setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normAngle(next) } : item)));
+                        type="text"
+                        title="Waypoint heading in degrees (e.g. -90, 0, 45)"
+                        defaultValue={Math.round(wp.heading)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            const text = (event.target as HTMLInputElement).value.trim();
+                            if (text === '') {
+                              setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
+                              (event.target as HTMLInputElement).value = '0';
+                            } else {
+                              const next = Number(text);
+                              if (!Number.isNaN(next)) {
+                                const normalized = normAngle(next);
+                                setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
+                                (event.target as HTMLInputElement).value = String(Math.round(normalized));
+                              } else {
+                                (event.target as HTMLInputElement).value = String(Math.round(wp.heading));
+                              }
+                            }
+                            (event.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        onBlur={(event) => {
+                          const text = event.target.value.trim();
+                          if (text === '') {
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
+                            event.target.value = '0';
+                          } else {
+                            const next = Number(text);
+                            if (!Number.isNaN(next)) {
+                              const normalized = normAngle(next);
+                              setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
+                              event.target.value = String(Math.round(normalized));
+                            } else {
+                              event.target.value = String(Math.round(wp.heading));
+                            }
+                          }
                         }}
                         onClick={(event) => event.stopPropagation()}
                       />

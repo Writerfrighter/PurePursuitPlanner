@@ -77,6 +77,8 @@ header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(
 .empty-note{color:var(--text-muted);font-size:11px;padding:5px 0}
 .heading-meta{font-size:10px;color:var(--purple);margin-left:4px;text-align:right}
 .heading-meta-dir{color:var(--text-muted);font-size:9px;margin-top:2px}
+.dial-canvas{border-radius:50%;cursor:grab;display:block;flex-shrink:0}
+.dial-canvas:active{cursor:grabbing}
 .collision-badge{display:none;color:var(--red)}
 .visible{display:block!important}
 
