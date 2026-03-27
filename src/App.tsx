@@ -824,8 +824,41 @@ export default function App() {
       <header>
         <div className="logo">FRC <span>2026 //</span> REBUILT Path Planner</div>
         <div className="alliance-toggle">
-          <button className={alliance === 'blue' ? 'active blue' : ''} onClick={() => setAlliance('blue')}>BLUE</button>
-          <button className={alliance === 'red' ? 'active red' : ''} onClick={() => setAlliance('red')}>RED</button>
+          <button
+            className={alliance === 'blue' ? 'active blue' : ''}
+            onClick={() => {
+              if (alliance !== 'blue') {
+                setWaypoints((prev) => prev.map((wp) => {
+                  // Mirror in image space across field center, then convert back to user coords.
+                  const img = userToImg(wp.x, wp.y);
+                  const ix = FIELD.width - img.imgX;
+                  const iy = FIELD.height - img.imgY;
+                  const u = imgToUser(ix, iy);
+                  return { ...wp, x: u.x, y: u.y, heading: normAngle(wp.heading + 180) };
+                }));
+              }
+              setAlliance('blue');
+            }}
+          >
+            BLUE
+          </button>
+          <button
+            className={alliance === 'red' ? 'active red' : ''}
+            onClick={() => {
+              if (alliance !== 'red') {
+                setWaypoints((prev) => prev.map((wp) => {
+                  const img = userToImg(wp.x, wp.y);
+                  const ix = FIELD.width - img.imgX;
+                  const iy = FIELD.height - img.imgY;
+                  const u = imgToUser(ix, iy);
+                  return { ...wp, x: u.x, y: u.y, heading: normAngle(wp.heading + 180) };
+                }));
+              }
+              setAlliance('red');
+            }}
+          >
+            RED
+          </button>
         </div>
         <div className={`mode-pill ${mode}`}>{modeLabel[mode]}</div>
         <div className="header-btns">
