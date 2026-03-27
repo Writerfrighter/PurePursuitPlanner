@@ -8,6 +8,11 @@ export interface Waypoint {
   x: number;
   y: number;
   heading: number;
+  // Optional per-waypoint speed as a power scalar (0.0 - 1.0). Multiplied by global maxVel.
+  // Defaults to 1.0 when omitted.
+  speed?: number;
+  // Optional delay in seconds to wait at this waypoint before moving on. Defaults to 0.0.
+  delay?: number;
 }
 
 export interface Obstacle {

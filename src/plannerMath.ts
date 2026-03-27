@@ -184,13 +184,25 @@ export function buildPurePursuitPreviewPath(referencePath: SimPath | null, optio
     dists.push(totalDist);
   }
 
-  const totalTime = Math.max(0.01, travelTimeForDistance(totalDist, maxVel, maxAccel, maxDecel));
+  const useRefTiming = !!(referencePath.totalTime && referencePath.totalTime > 0);
+  const totalTime = useRefTiming ? referencePath.totalTime : Math.max(0.01, travelTimeForDistance(totalDist, maxVel, maxAccel, maxDecel));
 
-  for (let i = 0; i < out.length; i++) {
-    const progress = totalDist > 0 ? dists[i] / totalDist : 0;
-    const refPose = sampleAtTime(referencePath, referencePath.totalTime * progress);
-    out[i].heading = refPose ? refPose.heading : last.heading;
-    out[i].t = timeAtDistance(dists[i], totalDist, maxVel, maxAccel, maxDecel);
+  // If the reference path has timing information (from buildSimPath), copy timing and heading
+  // from the nearest spatial sample on the reference path so per-waypoint power/delay are respected.
+  if (useRefTiming) {
+    let lastRefIdx = 0;
+    for (let i = 0; i < out.length; i++) {
+      lastRefIdx = nearestRefIndex(referencePath.samples, out[i].x, out[i].y, lastRefIdx);
+      const refS = referencePath.samples[Math.min(lastRefIdx, referencePath.samples.length - 1)];
+      out[i].heading = refS.heading;
+      out[i].t = refS.t;
+    }
+  } else {
+    for (let i = 0; i < out.length; i++) {
+      const refPose = sampleAtTime(referencePath, referencePath.totalTime * (totalDist > 0 ? dists[i] / totalDist : 0));
+      out[i].heading = refPose ? refPose.heading : last.heading;
+      out[i].t = timeAtDistance(dists[i], totalDist, maxVel, maxAccel, maxDecel);
+    }
   }
 
   return {
@@ -202,8 +214,8 @@ export function buildPurePursuitPreviewPath(referencePath: SimPath | null, optio
 
 export function buildSimPath(waypoints: Waypoint[], settings: PlannerSettings): SimPath | null {
   if (waypoints.length < 2) return null;
-
   const samples: Array<{ x: number; y: number; heading: number; t: number }> = [];
+  const sampleSegIdx: number[] = [];
   const steps = 80;
 
   for (let i = 0; i < waypoints.length - 1; i++) {
@@ -221,12 +233,15 @@ export function buildSimPath(waypoints: Waypoint[], settings: PlannerSettings): 
       if (dh > 180) dh -= 360;
       if (dh < -180) dh += 360;
       samples.push({ x: pos.x, y: pos.y, heading: h0 + dh * t, t: 0 });
+      sampleSegIdx.push(i);
     }
   }
 
   const last = waypoints[waypoints.length - 1];
   samples.push({ x: last.x, y: last.y, heading: last.heading, t: 0 });
+  sampleSegIdx.push(waypoints.length - 2);
 
+  // Compute cumulative distances along samples
   let totalDist = 0;
   const dists = [0];
   for (let i = 1; i < samples.length; i++) {
@@ -234,14 +249,69 @@ export function buildSimPath(waypoints: Waypoint[], settings: PlannerSettings): 
     dists.push(totalDist);
   }
 
-  const maxVel = Math.max(1, settings.maxVel);
-  const maxAccel = Math.max(1, settings.maxAccel);
-  const maxDecel = Math.max(1, settings.maxDecel);
-  const totalTime = Math.max(0.01, travelTimeForDistance(totalDist, maxVel, maxAccel, maxDecel));
+  // Per-sample local max velocity (based on waypoint power for the segment)
+  const globalMaxVel = Math.max(0.01, settings.maxVel);
+  const maxAccel = Math.max(0.01, settings.maxAccel);
+  const maxDecel = Math.max(0.01, settings.maxDecel);
 
+  const localMax: number[] = new Array(samples.length).fill(globalMaxVel);
   for (let i = 0; i < samples.length; i++) {
-    samples[i].t = timeAtDistance(dists[i], totalDist, maxVel, maxAccel, maxDecel);
+    const seg = sampleSegIdx[i];
+    const wp = waypoints[Math.min(seg, waypoints.length - 1)];
+    const power = Math.max(0, Math.min(1, wp?.speed ?? 1.0));
+    localMax[i] = Math.max(0.01, power * globalMaxVel);
   }
+
+  // Velocity profiling via forward/backward pass to respect accel/decel limits
+  const vel = new Array(samples.length).fill(0);
+  // start at 0 velocity
+  vel[0] = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const dd = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y);
+    const vPrev = vel[i - 1];
+    const vReach = Math.sqrt(vPrev * vPrev + 2 * maxAccel * dd);
+    vel[i] = Math.min(localMax[i], vReach);
+  }
+  // end at 0 velocity
+  vel[samples.length - 1] = Math.min(vel[samples.length - 1], 0);
+  for (let i = samples.length - 2; i >= 0; i--) {
+    const dd = Math.hypot(samples[i + 1].x - samples[i].x, samples[i + 1].y - samples[i].y);
+    const vNext = vel[i + 1];
+    const vReach = Math.sqrt(vNext * vNext + 2 * maxDecel * dd);
+    vel[i] = Math.min(vel[i], vReach);
+  }
+
+  // Compute base times between samples
+  const baseT = new Array(samples.length).fill(0);
+  for (let i = 1; i < samples.length; i++) {
+    const dd = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y);
+    const v0 = vel[i - 1];
+    const v1 = vel[i];
+    let dt = 0;
+    if (v0 + v1 > 1e-6) dt = (2 * dd) / (v0 + v1);
+    else dt = dd / Math.max(1e-3, Math.max(v0, v1));
+    baseT[i] = baseT[i - 1] + dt;
+  }
+
+  // Compute prefix delays: sum delays for waypoints up to and including that waypoint
+  const prefixDelays: number[] = new Array(Math.max(1, waypoints.length - 1)).fill(0);
+  // For segments 0..nSegments-1, prefixDelays[seg] = sum_{k=0..seg} delay[k]
+  const nSegments = Math.max(0, waypoints.length - 1);
+  let acc = 0;
+  for (let seg = 0; seg < nSegments; seg++) {
+    acc += Math.max(0, waypoints[seg].delay ?? 0);
+    prefixDelays[seg] = acc;
+  }
+  const totalDelaySum = acc + Math.max(0, waypoints[waypoints.length - 1].delay ?? 0);
+
+  // Assign final sample times by adding the appropriate prefix delay for the segment the sample belongs to
+  for (let i = 0; i < samples.length; i++) {
+    const seg = sampleSegIdx[i];
+    const segDelay = seg >= 0 && seg < prefixDelays.length ? prefixDelays[seg] : 0;
+    samples[i].t = baseT[i] + segDelay;
+  }
+
+  const totalTime = Math.max(0.01, baseT[samples.length - 1] + totalDelaySum);
 
   applyTurnRateLimit(samples, settings.maxTurnRate);
 

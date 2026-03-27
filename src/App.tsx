@@ -755,7 +755,7 @@ export default function App() {
     if (mode === 'add') {
       setWaypoints((prev) => {
         const heading = prev.length ? calcHeadingFromTo(prev[prev.length - 1], pos) : 0;
-        return [...prev, { ...pos, heading }];
+        return [...prev, { ...pos, heading, speed: 1.0, delay: 0.0 }];
       });
       setSelectedWp(waypoints.length);
       return;
@@ -1045,6 +1045,58 @@ export default function App() {
                       <div className="heading-meta">
                         <div>{Math.round(wp.heading)}°</div>
                         <div className="heading-meta-dir">{hDir(wp.heading)}</div>
+                      </div>
+                    </div>
+                    <div className="form-row wp-extra" style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: '11px' }}>Power (0-1)</label>
+                        <input
+                          title="Per-waypoint power scalar (0.0 - 1.0). Multiplied by global max velocity."
+                          type="number"
+                          step={0.01}
+                          min={0}
+                          max={1}
+                          defaultValue={wp.speed ?? 1.0}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return;
+                            const txt = (event.target as HTMLInputElement).value.trim();
+                            const raw = txt === '' ? undefined : Number(txt);
+                            const val = raw === undefined || Number.isNaN(raw) ? 1.0 : Math.max(0, Math.min(1, raw));
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, speed: val } : item)));
+                            (event.target as HTMLInputElement).blur();
+                          }}
+                          onBlur={(event) => {
+                            const txt = event.target.value.trim();
+                            const raw = txt === '' ? undefined : Number(txt);
+                            const val = raw === undefined || Number.isNaN(raw) ? 1.0 : Math.max(0, Math.min(1, raw));
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, speed: val } : item)));
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <div style={{ width: 86 }}>
+                        <label style={{ display: 'block', fontSize: '11px' }}>Delay (s)</label>
+                        <input
+                          title="Delay to wait at this waypoint in seconds"
+                          type="number"
+                          step={0.1}
+                          defaultValue={wp.delay ?? 0.0}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return;
+                            const txt = (event.target as HTMLInputElement).value.trim();
+                            const raw = txt === '' ? undefined : Number(txt);
+                            const val = raw === undefined || Number.isNaN(raw) ? 0.0 : Math.max(0, raw);
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, delay: val } : item)));
+                            (event.target as HTMLInputElement).blur();
+                          }}
+                          onBlur={(event) => {
+                            const txt = event.target.value.trim();
+                            const raw = txt === '' ? undefined : Number(txt);
+                            const val = raw === undefined || Number.isNaN(raw) ? 0.0 : Math.max(0, raw);
+                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, delay: val } : item)));
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </div>
                     </div>
                     <button className="wp-del" onClick={(event) => { event.stopPropagation(); deleteWp(i); }}>×</button>
