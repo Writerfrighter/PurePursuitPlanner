@@ -1,4 +1,4 @@
-import type { Obstacle, PlannerSettings, SimPath, Waypoint } from './types';
+import type { Obstacle, PlannerSettings, SimPath, Waypoint, Alliance } from './types';
 
 export interface CollisionInfo {
   collides: boolean;
@@ -434,6 +434,28 @@ export function checkSegBlocked(a: Waypoint, b: Waypoint, obstacles: Obstacle[],
   }
 
   return false;
+}
+
+// Symmetric-field alliance pose adjustment (self-inverse).
+// Transforms a pose by the symmetric field mapping used by the Java helper:
+// x' = -FIELD.width - x
+// y' = FIELD.height - y
+// heading' = heading + 180 (normalized)
+export function flipPoseSymmetric(x: number, y: number, heading: number, fieldWidth: number, fieldHeight: number): { x: number; y: number; heading: number } {
+  const nx = -fieldWidth - x;
+  const ny = fieldHeight - y;
+  const nh = normAngle(heading + 180);
+  return { x: nx, y: ny, heading: nh };
+}
+
+// Convenience function matching the requested API: adjustPoseByAlliance(alliance,...)
+// Uses the symmetric-field flip. This will return a transformed pose for Red
+// when called with Alliance 'red', otherwise returns the input pose unchanged.
+export function adjustPoseByAlliance(alliance: Alliance, x: number, y: number, heading: number, fieldWidth: number, fieldHeight: number): { x: number; y: number; heading: number } {
+  if (alliance === 'red') {
+    return flipPoseSymmetric(x, y, heading, fieldWidth, fieldHeight);
+  }
+  return { x, y, heading };
 }
 
 function segRect(x1: number, y1: number, x2: number, y2: number, rx1: number, ry1: number, rx2: number, ry2: number): boolean {
