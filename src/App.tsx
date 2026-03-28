@@ -70,6 +70,8 @@ export default function App() {
     [pathDisplayMode, purePursuitPreviewPath, simPath],
   );
 
+  const mirrorHeadingY = useCallback((h: number) => normAngle(-h), []);
+
   const userToImg = useCallback((ux: number, uy: number): { imgX: number; imgY: number } => ({ imgX: FIELD.width - uy, imgY: ux }), []);
   const imgToUser = useCallback((ix: number, iy: number): { x: number; y: number } => ({ x: iy, y: FIELD.width - ix }), []);
 
@@ -875,7 +877,7 @@ export default function App() {
               const ix = img.imgX; // keep horizontal image coord
               const iy = FIELD.height - img.imgY; // reflect vertically in image space
               const u = imgToUser(ix, iy);
-              return { x: u.x, y: u.y, heading: normAngle(wp.heading + 180) };
+              return { x: u.x, y: u.y, heading: mirrorHeadingY(wp.heading) };
             }));
             setSelectedWp(-1);
           }}>Flip Side</button>
