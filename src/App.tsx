@@ -185,14 +185,14 @@ export default function App() {
       `// Alliance: ${alliance.toUpperCase()} | WPs: ${waypoints.length} | theta CW+, 0°=toward RED HUB`,
       `// Limits: v=${fmt(settings.maxVel)} in/s, a=${fmt(settings.maxAccel)} in/s^2, decel=${fmt(settings.maxDecel)} in/s^2, turn=${fmt(settings.maxTurnRate)} deg/s`,
       '',
-      `TrcPose2D startPose = new TrcPose2D(${fmt(-s.x)}, ${fmt(s.y)}, ${fmt(-s.heading)});`,
-      `TrcPose2D endPose   = new TrcPose2D(${fmt(-e.x)}, ${fmt(e.y)}, ${fmt(-e.heading)});`,
+      `TrcPose2D startPose = new TrcPose2D(${fmt(-s.x)}, ${fmt(s.y)}, ${fmt(s.heading)});`,
+      `TrcPose2D endPose   = new TrcPose2D(${fmt(-e.x)}, ${fmt(e.y)}, ${fmt(e.heading)});`,
     ];
     if (waypoints.length > 2) {
       lines.push('');
       lines.push('// Intermediate waypoints');
       waypoints.slice(1, -1).forEach((wp, i) => {
-        lines.push(`TrcPose2D wp${i + 1} = new TrcPose2D(${fmt(-wp.x)}, ${fmt(wp.y)}, ${fmt(-wp.heading)});`);
+        lines.push(`TrcPose2D wp${i + 1} = new TrcPose2D(${fmt(-wp.x)}, ${fmt(wp.y)}, ${fmt(wp.heading)});`);
       });
     }
     lines.push('');
