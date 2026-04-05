@@ -39,9 +39,11 @@ export default function App() {
   const [simT, setSimT] = useState(0);
   const [simPlaying, setSimPlaying] = useState(false);
   const [simSpeed, setSimSpeed] = useState(1);
-  const [pathDisplayMode, setPathDisplayMode] = useState<PathDisplayMode>('purePursuit');
+  const [pathDisplayMode, setPathDisplayMode] = useState<PathDisplayMode>('catmull');
   const [purePursuitLookahead, setPurePursuitLookahead] = useState(10);
   const [mouseCoord, setMouseCoord] = useState({ x: 0, y: 0 });
+  const [savedPaths, setSavedPaths] = useState<{ name: string; waypoints: Waypoint[]; created: number }[]>([]);
+  const [saveName, setSaveName] = useState('');
   const [tooltip, setTooltip] = useState<{ show: boolean; text: string; x: number; y: number }>({ show: false, text: '', x: 0, y: 0 });
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -149,6 +151,47 @@ export default function App() {
     if (!canvas) return { x: 0, y: 0 };
     const r = canvas.getBoundingClientRect();
     return canvasToUser((event.clientX - r.left) * (canvas.width / r.width), (event.clientY - r.top) * (canvas.height / r.height));
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('pp_saved_paths_v1');
+      if (raw) setSavedPaths(JSON.parse(raw));
+    } catch (e) {}
+  }, []);
+
+  const persistSavedPaths = (next: typeof savedPaths) => {
+    setSavedPaths(next);
+    try { localStorage.setItem('pp_saved_paths_v1', JSON.stringify(next)); } catch (e) {}
+  };
+
+  const handleSaveCurrent = () => {
+    if (!waypoints || waypoints.length === 0) {
+      setTooltip({ show: true, text: 'No waypoints to save', x: 10, y: 10 });
+      setTimeout(() => setTooltip((t) => ({ ...t, show: false })), 1500);
+      return;
+    }
+    const name = saveName.trim() || `Path ${new Date().toLocaleString()}`;
+    const entry = { name, waypoints: waypoints.slice(), created: Date.now() };
+    persistSavedPaths([entry, ...savedPaths]);
+    setSaveName('');
+  };
+
+  const handleLoadPath = (i: number) => {
+    const entry = savedPaths[i];
+    if (!entry) return;
+    setWaypointsHist(entry.waypoints.slice());
+    setSelectedWp(-1);
+    setTab('waypoints');
+  };
+
+  const handleDeletePath = (i: number) => {
+    const entry = savedPaths[i];
+    if (!entry) return;
+    if (!window.confirm(`Delete saved path "${entry.name}"?`)) return;
+    const next = savedPaths.slice();
+    next.splice(i, 1);
+    persistSavedPaths(next);
   };
 
   const nearestWp = (ux: number, uy: number, threshold = 20 / scaleRef.current): number => {
@@ -1005,6 +1048,7 @@ export default function App() {
               <button title="Java" className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>Java</button>
               <button title="Settings" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Set</button>
               <button title="Obstacles" className={tab === 'obstacles' ? 'active' : ''} onClick={() => setTab('obstacles')}>Obs</button>
+                <button title="Paths" className={tab === 'paths' ? 'active' : ''} onClick={() => setTab('paths')}>Pth</button>
           </div>
 
           {tab === 'waypoints' && (
@@ -1287,6 +1331,34 @@ export default function App() {
               </div>
               <div className="form-row"><label>PP lookahead (in)</label><input title="Pure pursuit lookahead distance in inches" type="number" min={1} value={purePursuitLookahead} onChange={(e) => setPurePursuitLookahead(Math.max(1, Number(e.target.value) || 1))} /></div>
               <div className="form-row"><label>Snap (in)</label><input title="Waypoint snap size in inches" type="number" value={settings.snap} onChange={(e) => setSettings((s) => ({ ...s, snap: Number(e.target.value) }))} /></div>
+            </div>
+          )}
+
+          {tab === 'paths' && (
+            <div className="sidebar-content">
+              <div className="section-hdr">Saved Paths</div>
+              <div className="info-box">Save your current waypoint sequence, load it later, or delete saved paths.</div>
+
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                <input placeholder="Name (optional)" value={saveName} onChange={(e) => setSaveName(e.target.value)} style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' }} />
+                <button className="btn primary" onClick={handleSaveCurrent}>Save</button>
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                {!savedPaths.length && <div className="empty-note">No saved paths yet. Save your current path to get started.</div>}
+                {savedPaths.map((p, i) => (
+                  <div key={i} className="wp-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div className="wp-label">{p.name}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{new Date(p.created).toLocaleString()} • {p.waypoints.length} wpts</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn" onClick={() => handleLoadPath(i)}>Load</button>
+                      <button className="btn" onClick={() => handleDeletePath(i)}>Del</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
