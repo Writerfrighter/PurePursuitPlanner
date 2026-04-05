@@ -53,6 +53,48 @@ export default function App() {
   const rotateIndexRef = useRef(-1);
   const simRafRef = useRef<number | null>(null);
   const simLastTsRef = useRef<number | null>(null);
+  const historyRef = useRef<Waypoint[][]>([]);
+  const isUndoingRef = useRef(false);
+
+  const pushHistory = (prev: Waypoint[]) => {
+    if (isUndoingRef.current) return;
+    // Avoid pushing duplicate consecutive snapshots
+    const last = historyRef.current[historyRef.current.length - 1];
+    if (last && last.length === prev.length) {
+      let same = true;
+      for (let i = 0; i < prev.length; i++) {
+        const a = last[i];
+        const b = prev[i];
+        if (!a || !b || a.x !== b.x || a.y !== b.y || a.heading !== b.heading) { same = false; break; }
+      }
+      if (same) return;
+    }
+    // push shallow copy snapshot
+    historyRef.current.push(prev.slice());
+    if (historyRef.current.length > 50) historyRef.current.shift();
+  };
+
+  const undoHistory = () => {
+    const prev = historyRef.current.pop();
+    if (!prev) return;
+    isUndoingRef.current = true;
+    setWaypoints(prev);
+    setSelectedWp(-1);
+    // Allow next tick to re-enable history pushes
+    setTimeout(() => { isUndoingRef.current = false; }, 0);
+  };
+
+  const setWaypointsHist = (next: Waypoint[] | ((prev: Waypoint[]) => Waypoint[])) => {
+    if (typeof next === 'function') {
+      setWaypoints((prev) => {
+        pushHistory(prev);
+        return (next as (p: Waypoint[]) => Waypoint[])(prev);
+      });
+    } else {
+      pushHistory(waypoints);
+      setWaypoints(next);
+    }
+  };
 
   const simPath = useMemo(() => buildSimPath(waypoints, settings), [waypoints, settings]);
   const purePursuitPreviewPath = useMemo(
@@ -731,15 +773,22 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (target?.tagName === 'INPUT') return;
 
+        // Undo (Ctrl/Cmd+Z)
+        if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
+          event.preventDefault();
+          undoHistory();
+          return;
+        }
+
       if (event.key === 'a' || event.key === 'A') setMode('add');
       if (event.key === 'd' || event.key === 'D') setMode('drag');
       if (event.key === 'r' || event.key === 'R') setMode('rotate');
       if (event.key === 'x' || event.key === 'X') setMode('delete');
       if (event.key === 'Escape') setSelectedWp(-1);
-      if (event.key === 'Delete' && selectedWp >= 0) {
-        setWaypoints((prev) => prev.filter((_, i) => i !== selectedWp));
-        setSelectedWp(-1);
-      }
+        if (event.key === 'Delete' && selectedWp >= 0) {
+              setWaypointsHist((prev) => prev.filter((_, i) => i !== selectedWp));
+              setSelectedWp(-1);
+            }
       if (event.key === ' ' && activePath) {
         event.preventDefault();
         setSimPlaying((p) => !p);
@@ -755,7 +804,7 @@ export default function App() {
   const onCanvasDown = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     const pos = getCanvasEventCoord(event);
     if (mode === 'add') {
-      setWaypoints((prev) => {
+      setWaypointsHist((prev) => {
         const heading = prev.length ? calcHeadingFromTo(prev[prev.length - 1], pos) : 0;
         return [...prev, { ...pos, heading }];
       });
@@ -765,10 +814,16 @@ export default function App() {
     const idx = nearestWp(pos.x, pos.y);
     if (idx < 0) return;
     setSelectedWp(idx);
-    if (mode === 'drag') dragIndexRef.current = idx;
-    if (mode === 'rotate') rotateIndexRef.current = idx;
+    if (mode === 'drag') {
+      pushHistory(waypoints);
+      dragIndexRef.current = idx;
+    }
+    if (mode === 'rotate') {
+      pushHistory(waypoints);
+      rotateIndexRef.current = idx;
+    }
     if (mode === 'delete') {
-      setWaypoints((prev) => prev.filter((_, i) => i !== idx));
+      setWaypointsHist((prev) => prev.filter((_, i) => i !== idx));
       setSelectedWp(-1);
     }
   };
@@ -804,7 +859,8 @@ export default function App() {
         show: true,
         x: event.clientX + 14,
         y: event.clientY - 10,
-        text: `WP${idx}: (${fmt(wp.x)}", ${fmt(wp.y)}") theta=${Math.round(-wp.heading)}°`,
+        // Sidebar displays X as -wp.x and Y as wp.y; make tooltip consistent with that
+        text: `WP${idx}: (${fmt(-wp.x)}\", ${fmt(wp.y)}\") theta=${Math.round(wp.heading)}°`,
       });
     } else {
       setTooltip((t) => ({ ...t, show: false }));
@@ -817,7 +873,7 @@ export default function App() {
   };
 
   const deleteWp = (index: number): void => {
-    setWaypoints((prev) => prev.filter((_, i) => i !== index));
+    setWaypointsHist((prev) => prev.filter((_, i) => i !== index));
     if (selectedWp === index) setSelectedWp(-1);
   };
 
@@ -830,7 +886,7 @@ export default function App() {
             className={alliance === 'blue' ? 'active blue' : ''}
             onClick={() => {
               if (alliance !== 'blue') {
-                setWaypoints((prev) => prev.map((wp) => {
+                setWaypointsHist((prev) => prev.map((wp) => {
                   // Mirror in image space across field center, then convert back to user coords.
                   const img = userToImg(wp.x, wp.y);
                   const ix = FIELD.width - img.imgX;
@@ -848,7 +904,7 @@ export default function App() {
             className={alliance === 'red' ? 'active red' : ''}
             onClick={() => {
               if (alliance !== 'red') {
-                setWaypoints((prev) => prev.map((wp) => {
+                setWaypointsHist((prev) => prev.map((wp) => {
                   const img = userToImg(wp.x, wp.y);
                   const ix = FIELD.width - img.imgX;
                   const iy = FIELD.height - img.imgY;
@@ -869,10 +925,10 @@ export default function App() {
               {m[0].toUpperCase() + m.slice(1)}
             </button>
           ))}
-          <button className="btn" onClick={() => { setWaypoints([]); setSelectedWp(-1); setSimT(0); }}>Clear</button>
+          <button className="btn" onClick={() => { setWaypointsHist([]); setSelectedWp(-1); setSimT(0); }}>Clear</button>
           <button className="btn primary" onClick={() => navigator.clipboard.writeText(generateJava())}>Copy Array</button>
           <button className="btn" onClick={() => {
-            setWaypoints((prev) => prev.map((wp) => {
+            setWaypointsHist((prev) => prev.map((wp) => {
               const img = userToImg(wp.x, wp.y);
               const ix = img.imgX; // keep horizontal image coord
               const iy = FIELD.height - img.imgY; // reflect vertically in image space
@@ -963,7 +1019,47 @@ export default function App() {
               <div id="wp-list">
                 {!waypoints.length && <div className="empty-note">Click the field to place waypoints.</div>}
                 {waypoints.map((wp, i) => (
-                  <div key={i} className={`wp-item ${i === 0 ? 'start' : i === waypoints.length - 1 ? 'end' : 'mid'} ${selectedWp === i ? 'selected' : ''}`} onClick={() => setSelectedWp(i)}>
+                  <div
+                    key={i}
+                    className={`wp-item ${i === 0 ? 'start' : i === waypoints.length - 1 ? 'end' : 'mid'} ${selectedWp === i ? 'selected' : ''}`}
+                    onClick={() => setSelectedWp(i)}
+                    draggable
+                    onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
+                      e.dataTransfer?.setData('text/plain', String(i));
+                      e.dataTransfer!.effectAllowed = 'move';
+                      (e.currentTarget as HTMLDivElement).classList.add('dragging');
+                    }}
+                    onDragOver={(e: React.DragEvent<HTMLDivElement>) => {
+                      e.preventDefault();
+                      e.dataTransfer!.dropEffect = 'move';
+                      (e.currentTarget as HTMLDivElement).classList.add('drag-over');
+                    }}
+                    onDragLeave={(e: React.DragEvent<HTMLDivElement>) => {
+                      (e.currentTarget as HTMLDivElement).classList.remove('drag-over');
+                    }}
+                    onDrop={(e: React.DragEvent<HTMLDivElement>) => {
+                      e.preventDefault();
+                      const from = Number(e.dataTransfer?.getData('text/plain'));
+                      const to = i;
+                      if (!Number.isNaN(from) && from >= 0) {
+                        setWaypointsHist((prev) => {
+                          const arr = [...prev];
+                          const [item] = arr.splice(from, 1);
+                          arr.splice(to, 0, item);
+                          return arr;
+                        });
+                        setSelectedWp(to);
+                      }
+                      // cleanup classes
+                      (e.currentTarget as HTMLDivElement).classList.remove('drag-over');
+                      const other = document.querySelector('.dragging') as HTMLElement | null;
+                      if (other) other.classList.remove('dragging');
+                    }}
+                    onDragEnd={(e: React.DragEvent<HTMLDivElement>) => {
+                      (e.currentTarget as HTMLDivElement).classList.remove('dragging');
+                      (e.currentTarget as HTMLDivElement).classList.remove('drag-over');
+                    }}
+                  >
                     <div className="wp-label">{i === 0 ? 'Start' : i === waypoints.length - 1 ? 'End' : `Waypoint ${i}`}</div>
                     <div className="wp-coords">X=<span>{fmt(-wp.x)}"</span> Y=<span>{fmt(wp.y)}"</span></div>
                     <div className="heading-row">
@@ -1026,6 +1122,8 @@ export default function App() {
                           const r = el.getBoundingClientRect();
                           const startAngle = Math.atan2(event.clientY - (r.top + r.height / 2), event.clientX - (r.left + r.width / 2)) * 180 / Math.PI;
                           const startH = wp.heading;
+                          // push a single history snapshot for the dial rotation start
+                          pushHistory(waypoints);
                           const handleMouseMove = (e: MouseEvent) => {
                             const r2 = el.getBoundingClientRect();
                             const currentAngle = Math.atan2(e.clientY - (r2.top + r2.height / 2), e.clientX - (r2.left + r2.width / 2)) * 180 / Math.PI;
@@ -1051,16 +1149,16 @@ export default function App() {
                         title="Waypoint heading in degrees (e.g. -90, 0, 45)"
                         defaultValue={Math.round(wp.heading)}
                         onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
+                              if (event.key === 'Enter') {
                             const text = (event.target as HTMLInputElement).value.trim();
                             if (text === '') {
-                              setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
+                              setWaypointsHist((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
                               (event.target as HTMLInputElement).value = '0';
                             } else {
                               const next = Number(text);
                               if (!Number.isNaN(next)) {
                                 const normalized = normAngle(next);
-                                setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
+                                setWaypointsHist((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
                                 (event.target as HTMLInputElement).value = String(Math.round(normalized));
                               } else {
                                 (event.target as HTMLInputElement).value = String(Math.round(wp.heading));
@@ -1072,13 +1170,13 @@ export default function App() {
                         onBlur={(event) => {
                           const text = event.target.value.trim();
                           if (text === '') {
-                            setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
+                            setWaypointsHist((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: 0 } : item)));
                             event.target.value = '0';
                           } else {
                             const next = Number(text);
                             if (!Number.isNaN(next)) {
                               const normalized = normAngle(next);
-                              setWaypoints((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
+                              setWaypointsHist((prev) => prev.map((item, idx) => (idx === i ? { ...item, heading: normalized } : item)));
                               event.target.value = String(Math.round(normalized));
                             } else {
                               event.target.value = String(Math.round(wp.heading));
@@ -1131,7 +1229,7 @@ export default function App() {
                     if (textarea?.value.trim()) {
                       const imported = parseAndImportWaypoints(textarea.value);
                       if (imported.length > 0) {
-                        setWaypoints(imported);
+                        setWaypointsHist(imported);
                         setSelectedWp(-1);
                         textarea.value = '';
                         setTab('waypoints');
