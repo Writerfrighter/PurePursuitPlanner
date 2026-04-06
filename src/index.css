@@ -94,20 +94,20 @@ input[type=number]{-moz-appearance:textfield}
 
 /* Light theme overrides — toggled by adding the `light` class on the documentElement */
 .light{
-	--bg:#f7f8fb;
-	--surface:#ffffff;
-	--surface2:#f3f4f7;
-	--border:rgba(0,0,0,0.06);
-	--border2:rgba(0,0,0,0.12);
+	--bg:#f3f5f7;
+	--surface:#f8fafb;
+	--surface2:#eef3f6;
+	--border:rgba(0,0,0,0.05);
+	--border2:rgba(0,0,0,0.08);
 	--text:#0f1724;
-	--text-muted:#65707f;
-	--blue:#2563eb;
-	--red:#ef4444;
-	--green:#16a34a;
-	--amber:#d97706;
-	--purple:#7c3aed;
-	--panel:#ffffff;
-	--field-canvas-bg:#f2f4f8;
+	--text-muted:#6b7280;
+	--blue:#2b6cb0;
+	--red:#d04b4b;
+	--green:#0ea67a;
+	--amber:#c27a05;
+	--purple:#6b46c1;
+	--panel:#f8fafb;
+	--field-canvas-bg:#eef3f6;
 }
 
 @media (max-width: 980px){
