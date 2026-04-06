@@ -45,6 +45,7 @@ export default function App() {
   const [savedPaths, setSavedPaths] = useState<{ name: string; waypoints: Waypoint[]; created: number }[]>([]);
   const [saveName, setSaveName] = useState('');
   const [tooltip, setTooltip] = useState<{ show: boolean; text: string; x: number; y: number }>({ show: false, text: '', x: 0, y: 0 });
+  const [theme, setTheme] = useState<'dark'|'light'>(() => (localStorage.getItem('pp_theme_v1') === 'light' ? 'light' : 'dark'));
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -115,6 +116,32 @@ export default function App() {
   );
 
   const mirrorHeadingY = useCallback((h: number) => normAngle(-h), []);
+
+  const cssToRgba = (input: string, alpha: number) => {
+    const s = input.trim();
+    const rgbaMatch = s.match(/rgba?\(([^)]+)\)/i);
+    if (rgbaMatch) {
+      const parts = rgbaMatch[1].split(',').map(p => p.trim());
+      const r = Number(parts[0] ?? 0);
+      const g = Number(parts[1] ?? 0);
+      const b = Number(parts[2] ?? 0);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    const hex = s.replace('#', '');
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    return s;
+  };
 
   const userToImg = useCallback((ux: number, uy: number): { imgX: number; imgY: number } => ({ imgX: FIELD.width - uy, imgY: ux }), []);
   const imgToUser = useCallback((ix: number, iy: number): { x: number; y: number } => ({ x: iy, y: FIELD.width - ix }), []);
@@ -325,16 +352,59 @@ export default function App() {
   }, [tooltip.x, tooltip.y]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'light') root.classList.add('light');
+    else root.classList.remove('light');
+    try { localStorage.setItem('pp_theme_v1', theme); } catch (e) {}
+  }, [theme]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const { w: canvasW, h: canvasH } = canvasSizeRef.current;
     const scale = scaleRef.current;
+    const css = getComputedStyle(document.documentElement);
+    const fieldBg = (css.getPropertyValue('--field-canvas-bg') || '#0d1018').trim();
+    const panelColor = (css.getPropertyValue('--panel') || '#14171f').trim();
+    const border2 = (css.getPropertyValue('--border2') || 'rgba(255,255,255,.35)').trim();
+    const textColor = (css.getPropertyValue('--text') || '#e8eaf0').trim();
+    const blueColor = (css.getPropertyValue('--blue') || '#4a9eff').trim();
+    const greenColor = (css.getPropertyValue('--green') || '#3ee684').trim();
+    const redColor = (css.getPropertyValue('--red') || '#ff5a5a').trim();
+
+    const cssToRgba = (input: string, alpha: number) => {
+      const s = input.trim();
+      // if already rgba/rgba(...) return with replaced alpha
+      const rgbaMatch = s.match(/rgba?\(([^)]+)\)/i);
+      if (rgbaMatch) {
+        const parts = rgbaMatch[1].split(',').map(p => p.trim());
+        const r = Number(parts[0] ?? 0);
+        const g = Number(parts[1] ?? 0);
+        const b = Number(parts[2] ?? 0);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      // hex
+      const hex = s.replace('#', '');
+      if (hex.length === 3) {
+        const r = parseInt(hex[0] + hex[0], 16);
+        const g = parseInt(hex[1] + hex[1], 16);
+        const b = parseInt(hex[2] + hex[2], 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      if (hex.length === 6 || hex.length === 8) {
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      return s;
+    };
 
     const drawGrid = (): void => {
       const g = 24 * scale;
-      ctx.strokeStyle = 'rgba(255,255,255,.035)';
+      ctx.strokeStyle = border2;
       ctx.lineWidth = 0.5;
       for (let x = 0; x < canvasW; x += g) {
         ctx.beginPath();
@@ -468,15 +538,15 @@ export default function App() {
       const top = Math.max(4, Math.min(canvasH - bh - 4, cy - bh / 2));
 
       ctx.save();
-      ctx.fillStyle = 'rgba(8,12,24,.88)';
-      ctx.strokeStyle = 'rgba(255,255,255,.35)';
+      ctx.fillStyle = panelColor;
+      ctx.strokeStyle = border2;
       ctx.lineWidth = 1;
       ctx.beginPath();
       rrect(left, top, bw, bh, 4);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.fillStyle = textColor;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(text, left + padX, top + bh / 2 + 0.5);
@@ -638,7 +708,7 @@ export default function App() {
       ctx.beginPath();
       rrect(cx - ow / 2, cy - oh / 2, ow, oh, 3);
       ctx.clip();
-      ctx.fillStyle = 'rgba(255,255,255,.65)';
+      ctx.fillStyle = textColor;
       const drewInside = drawObstacleLabel(obs.label, cx, cy + 1, ow, oh);
       ctx.restore();
 
@@ -675,17 +745,17 @@ export default function App() {
       ctx.save();
       ctx.translate(p.cx, p.cy);
       ctx.rotate(angle);
-      ctx.shadowColor = 'rgba(255,90,90,.9)';
+      ctx.shadowColor = cssToRgba(redColor, 0.9);
       ctx.shadowBlur = 16;
-      ctx.fillStyle = 'rgba(255,90,90,.32)';
-      ctx.strokeStyle = 'rgba(255,130,130,.95)';
+      ctx.fillStyle = cssToRgba(redColor, 0.32);
+      ctx.strokeStyle = cssToRgba(redColor, 0.95);
       ctx.lineWidth = 2.2;
       ctx.beginPath();
       rrect(-rw / 2, -rl / 2, rw, rl, 3);
       ctx.fill();
       ctx.stroke();
 
-      ctx.strokeStyle = 'rgba(255,255,255,.72)';
+      ctx.strokeStyle = cssToRgba(textColor, 0.72);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -705,8 +775,8 @@ export default function App() {
         const p = userToCanvas(renderPath.samples[i].x, renderPath.samples[i].y);
         ctx.lineTo(p.cx, p.cy);
       }
-      const okColor = pathDisplayMode === 'purePursuit' ? 'rgba(74,158,255,.68)' : 'rgba(62,230,132,.55)';
-      ctx.strokeStyle = collision ? 'rgba(255,80,80,.75)' : okColor;
+      const okColor = pathDisplayMode === 'purePursuit' ? cssToRgba(blueColor, 0.68) : cssToRgba(greenColor, 0.55);
+      ctx.strokeStyle = collision ? cssToRgba(redColor, 0.75) : okColor;
       ctx.lineWidth = 2.5;
       ctx.setLineDash(collision ? [7, 4] : []);
       ctx.stroke();
@@ -714,11 +784,11 @@ export default function App() {
     };
 
     ctx.clearRect(0, 0, canvasW, canvasH);
-    ctx.fillStyle = '#0d1018';
+    ctx.fillStyle = fieldBg;
     ctx.fillRect(0, 0, canvasW, canvasH);
     if (settings.showGrid) drawGrid();
-
-    ctx.strokeStyle = 'rgba(255,255,255,.28)';
+    
+    ctx.strokeStyle = border2;
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, canvasW - 2, canvasH - 2);
 
@@ -746,11 +816,12 @@ export default function App() {
       const isFirst = i === 0;
       const isLast = i === waypoints.length - 1;
       const isSelected = i === selectedWp;
-      const color = isFirst ? '#3ee684' : isLast ? '#ff5a5a' : '#f7b731';
+      const amberColor = (css.getPropertyValue('--amber') || '#f7b731').trim();
+      const colorVar = isFirst ? greenColor : isLast ? redColor : amberColor;
       const r = Math.max(7, scale * 4.2);
       const ang = getGlobalZeroAngle() + wp.heading * Math.PI / 180;
 
-      ctx.strokeStyle = isSelected ? 'rgba(255,255,255,.65)' : 'rgba(255,255,255,.28)';
+      ctx.strokeStyle = isSelected ? cssToRgba(textColor, 0.65) : cssToRgba(textColor, 0.28);
       ctx.lineWidth = 1.5;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -761,16 +832,16 @@ export default function App() {
 
       ctx.beginPath();
       ctx.arc(p.cx, p.cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? color : `${color}cc`;
+      ctx.fillStyle = isSelected ? colorVar : cssToRgba(colorVar, 0.8);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.4)';
+      ctx.strokeStyle = cssToRgba(textColor, 0.4);
       ctx.stroke();
     });
 
     if (collision) {
       drawCollisionRobot(collisionInfo.x, collisionInfo.y, collisionInfo.heading);
       const cp = userToCanvas(collisionInfo.x, collisionInfo.y);
-      ctx.fillStyle = 'rgba(255,170,170,.95)';
+      ctx.fillStyle = cssToRgba(redColor, 0.95);
       ctx.font = "600 10px 'JetBrains Mono', monospace";
       ctx.textAlign = 'left';
       ctx.fillText(`collision @ t=${fmt(collisionInfo.t)}s`, cp.cx + 10, cp.cy - 10);
@@ -778,12 +849,22 @@ export default function App() {
 
     if (collision) {
       // draw tiny collision badge indicator on canvas corner
-      ctx.fillStyle = 'rgba(255,90,90,.82)';
+      ctx.fillStyle = cssToRgba(redColor, 0.82);
       ctx.font = "600 11px 'JetBrains Mono', monospace";
       ctx.textAlign = 'left';
       ctx.fillText('COLLISION', 8, 14);
     }
-  }, [activePath, alliance, collision, collisionInfo.heading, collisionInfo.t, collisionInfo.x, collisionInfo.y, getGlobalZeroAngle, obstacles, pathDisplayMode, selectedWp, settings, simT, userToCanvas, waypoints]);
+  }, [activePath, alliance, collision, collisionInfo.heading, collisionInfo.t, collisionInfo.x, collisionInfo.y, getGlobalZeroAngle, obstacles, pathDisplayMode, selectedWp, settings, simT, userToCanvas, waypoints, theme]);
+
+  // Redraw small dial canvases when theme or waypoints change
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll<HTMLCanvasElement>('.dial-canvas'));
+    els.forEach((el) => {
+      const idx = Number((el as any).dataset.index);
+      const wp = waypoints[idx];
+      drawDialCanvas(el, wp);
+    });
+  }, [theme, waypoints, getGlobalZeroAngle]);
 
   useEffect(() => {
     if (!simPlaying || !activePath) return;
@@ -915,6 +996,69 @@ export default function App() {
     rotateIndexRef.current = -1;
   };
 
+  // Draw a small heading dial for a waypoint canvas element
+  function drawDialCanvas(el: HTMLCanvasElement | null, wp: Waypoint | undefined) {
+    if (!el || !wp) return;
+    const ctx2 = el.getContext('2d');
+    if (!ctx2) return;
+    const cx2 = el.width / 2, cy2 = el.height / 2, r2 = cx2 - 1.5;
+    ctx2.clearRect(0, 0, el.width, el.height);
+    const cssSmall = getComputedStyle(document.documentElement);
+    const surface2Small = (cssSmall.getPropertyValue('--surface2') || '#1f2333').trim();
+    const border2Small = (cssSmall.getPropertyValue('--border2') || 'rgba(255,255,255,.14)').trim();
+    const borderSmall = (cssSmall.getPropertyValue('--border') || 'rgba(255,255,255,.18)').trim();
+    const textSmall = (cssSmall.getPropertyValue('--text') || '#e8eaf0').trim();
+    const greenSmall = (cssSmall.getPropertyValue('--green') || '#3ee684').trim();
+    const purpleSmall = (cssSmall.getPropertyValue('--purple') || '#a78bfa').trim();
+
+    ctx2.fillStyle = surface2Small;
+    ctx2.strokeStyle = border2Small;
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.arc(cx2, cy2, r2, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.stroke();
+
+    // Tick marks
+    for (let t = 0; t < 8; t++) {
+      const a = t * Math.PI / 4;
+      ctx2.strokeStyle = borderSmall;
+      ctx2.lineWidth = 0.8;
+      ctx2.beginPath();
+      ctx2.moveTo(cx2 + (r2 - 4) * Math.cos(a), cy2 + (r2 - 4) * Math.sin(a));
+      ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(a), cy2 + (r2 - 1) * Math.sin(a));
+      ctx2.stroke();
+    }
+
+    // N tick (use green)
+    const nA = Math.PI;
+    ctx2.strokeStyle = cssToRgba(greenSmall, 0.5);
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(cx2 + (r2 - 5) * Math.cos(nA), cy2 + (r2 - 5) * Math.sin(nA));
+    ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(nA), cy2 + (r2 - 1) * Math.sin(nA));
+    ctx2.stroke();
+
+    // Needle
+    const na = getGlobalZeroAngle() + wp.heading * Math.PI / 180;
+    ctx2.strokeStyle = purpleSmall;
+    ctx2.lineWidth = 2;
+    ctx2.beginPath();
+    ctx2.moveTo(cx2, cy2);
+    ctx2.lineTo(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na));
+    ctx2.stroke();
+    ctx2.fillStyle = purpleSmall;
+    ctx2.beginPath();
+    ctx2.arc(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na), 2.5, 0, Math.PI * 2);
+    ctx2.fill();
+
+    // Center dot
+    ctx2.fillStyle = cssToRgba(textSmall, 0.45);
+    ctx2.beginPath();
+    ctx2.arc(cx2, cy2, 2, 0, Math.PI * 2);
+    ctx2.fill();
+  }
+
   const deleteWp = (index: number): void => {
     setWaypointsHist((prev) => prev.filter((_, i) => i !== index));
     if (selectedWp === index) setSelectedWp(-1);
@@ -962,6 +1106,14 @@ export default function App() {
           </button>
         </div>
         <div className={`mode-pill ${mode}`}>{modeLabel[mode]}</div>
+        <button
+          className="btn"
+          style={{ marginLeft: 8 }}
+          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        >
+          {theme === 'dark' ? '🌙' : '🌞'}
+        </button>
         <div className="header-btns">
           {(['add', 'drag', 'rotate', 'delete'] as Mode[]).map((m) => (
             <button key={m} className={`btn ${mode === m ? m === 'drag' ? 'active-btn-drag' : m === 'rotate' ? 'active-btn-r' : m === 'delete' ? 'active-btn-del' : 'active-btn' : ''} ${m === 'delete' ? 'danger' : ''}`} onClick={() => setMode(m)}>
@@ -1112,57 +1264,16 @@ export default function App() {
                           if (!el) return;
                           el.width = 36;
                           el.height = 36;
-                          const ctx2 = el.getContext('2d');
-                          if (!ctx2) return;
-                          const cx2 = el.width / 2, cy2 = el.height / 2, r2 = cx2 - 1.5;
-                          ctx2.clearRect(0, 0, el.width, el.height);
-                          ctx2.fillStyle = '#1f2333';
-                          ctx2.strokeStyle = 'rgba(255,255,255,.14)';
-                          ctx2.lineWidth = 1;
-                          ctx2.beginPath();
-                          ctx2.arc(cx2, cy2, r2, 0, Math.PI * 2);
-                          ctx2.fill();
-                          ctx2.stroke();
-                          // Tick marks
-                          for (let i = 0; i < 8; i++) {
-                            const a = i * Math.PI / 4;
-                            ctx2.strokeStyle = 'rgba(255,255,255,.18)';
-                            ctx2.lineWidth = 0.8;
-                            ctx2.beginPath();
-                            ctx2.moveTo(cx2 + (r2 - 4) * Math.cos(a), cy2 + (r2 - 4) * Math.sin(a));
-                            ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(a), cy2 + (r2 - 1) * Math.sin(a));
-                            ctx2.stroke();
-                          }
-                          // N tick
-                          const nA = Math.PI;
-                          ctx2.strokeStyle = 'rgba(62,230,132,.5)';
-                          ctx2.lineWidth = 1;
-                          ctx2.beginPath();
-                          ctx2.moveTo(cx2 + (r2 - 5) * Math.cos(nA), cy2 + (r2 - 5) * Math.sin(nA));
-                          ctx2.lineTo(cx2 + (r2 - 1) * Math.cos(nA), cy2 + (r2 - 1) * Math.sin(nA));
-                          ctx2.stroke();
-                          // Needle
-                          const na = getGlobalZeroAngle() + wp.heading * Math.PI / 180;
-                          ctx2.strokeStyle = '#a78bfa';
-                          ctx2.lineWidth = 2;
-                          ctx2.beginPath();
-                          ctx2.moveTo(cx2, cy2);
-                          ctx2.lineTo(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na));
-                          ctx2.stroke();
-                          ctx2.fillStyle = '#a78bfa';
-                          ctx2.beginPath();
-                          ctx2.arc(cx2 + (r2 - 4) * Math.cos(na), cy2 + (r2 - 4) * Math.sin(na), 2.5, 0, Math.PI * 2);
-                          ctx2.fill();
-                          ctx2.fillStyle = 'rgba(255,255,255,.45)';
-                          ctx2.beginPath();
-                          ctx2.arc(cx2, cy2, 2, 0, Math.PI * 2);
-                          ctx2.fill();
+                          // store index for global redraws
+                          (el as any).dataset.index = String(i);
+                          drawDialCanvas(el, wp);
                         }}
+                        data-index={i}
                         className="dial-canvas"
                         title="Drag to rotate heading"
                         style={{ cursor: 'grab', borderRadius: '50%', display: 'block', flexShrink: 0, width: '36px', height: '36px' }}
                         onMouseDown={(event) => {
-                          const el = event.currentTarget;
+                          const el = event.currentTarget as HTMLCanvasElement;
                           const r = el.getBoundingClientRect();
                           const startAngle = Math.atan2(event.clientY - (r.top + r.height / 2), event.clientX - (r.left + r.width / 2)) * 180 / Math.PI;
                           const startH = wp.heading;
